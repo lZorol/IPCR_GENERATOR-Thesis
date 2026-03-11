@@ -132,7 +132,8 @@ const App = () => {
     if (validCategories.length === 0) return 0;
     
     const totalRating = validCategories.reduce((sum, cat) => {
-      return sum + calculateRating(cat.target, cat.accomplished);
+      const r = cat.rating != null && cat.rating > 0 ? Number(cat.rating) : calculateRating(cat.target, cat.accomplished);
+      return sum + r;
     }, 0);
     
     return (totalRating / validCategories.length).toFixed(2);
@@ -365,7 +366,7 @@ const App = () => {
             {/* Category Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {Object.entries(ipcrData).map(([key, data]) => {
-                const rating = calculateRating(data.target, data.accomplished);
+                const rating = data.rating != null && data.rating > 0 ? Number(data.rating) : calculateRating(data.target, data.accomplished);
                 const categoryNames = {
                   syllabus: 'Syllabus',
                   courseGuide: 'Course Guide',

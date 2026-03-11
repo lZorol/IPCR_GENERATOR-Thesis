@@ -11,7 +11,10 @@ const db = new sqlite3.Database(path.join(__dirname, 'ipcr.db'), (err) => {
 
 // Initialize database tables
 db.serialize(() => {
-  // Users table
+
+  /**
+   * USERS TABLE
+   */
   db.run(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24,12 +27,24 @@ db.serialize(() => {
       google_drive_token TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
-  `, (err) => {
-    if (err) console.error('Error creating users table:', err);
-    else console.log('✅ Users table ready');
-  });
+  `);
 
-  // IPCR Targets table
+
+  /**
+   * CATEGORY DEADLINES TABLE
+   */
+  db.run(`
+    CREATE TABLE IF NOT EXISTS category_deadlines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      category TEXT UNIQUE NOT NULL,
+      deadline DATE NOT NULL
+    )
+  `);
+
+
+  /**
+   * IPCR TARGETS TABLE
+   */
   db.run(`
     CREATE TABLE IF NOT EXISTS ipcr_targets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,12 +56,12 @@ db.serialize(() => {
       FOREIGN KEY (user_id) REFERENCES users(id),
       UNIQUE(user_id, category, academic_year, semester)
     )
-  `, (err) => {
-    if (err) console.error('Error creating ipcr_targets table:', err);
-    else console.log('✅ IPCR Targets table ready');
-  });
+  `);
 
-  // Documents table
+
+  /**
+   * DOCUMENTS TABLE
+   */
   db.run(`
     CREATE TABLE IF NOT EXISTS documents (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,33 +79,75 @@ db.serialize(() => {
       status TEXT DEFAULT 'processed',
       FOREIGN KEY (user_id) REFERENCES users(id)
     )
-  `, (err) => {
-    if (err) console.error('Error creating documents table:', err);
-    else console.log('✅ Documents table ready');
-  });
+  `);
 
-  // IPCR Records table
+
+  /**
+   * IPCR RECORDS TABLE
+   * Added q_score, e_score, t_score
+   */
   db.run(`
     CREATE TABLE IF NOT EXISTS ipcr_records (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
       category TEXT NOT NULL,
+
       target INTEGER DEFAULT 0,
       accomplished INTEGER DEFAULT 0,
+
+      q_score REAL DEFAULT 0,
+      e_score REAL DEFAULT 0,
+      t_score REAL DEFAULT 0,
+
       rating REAL DEFAULT 0,
+
       submission_date DATE,
       completion_date DATE,
       remarks TEXT,
+
       academic_year TEXT DEFAULT '2023-2024',
       semester TEXT DEFAULT '1st',
+
       FOREIGN KEY (user_id) REFERENCES users(id),
       UNIQUE(user_id, category, academic_year, semester)
     )
-  `, (err) => {
-    if (err) console.error('Error creating ipcr_records table:', err);
-    else console.log('✅ IPCR Records table ready');
-  });
+  `);
 
+
+  /**
+   * INDEXES
+   */
+  db.run(`CREATE INDEX IF NOT EXISTS idx_documents_user ON documents(user_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_documents_category ON documents(category)`);
+
+  /**
+   * MIGRATION: ensure ipcr_records has rating columns (for DBs created before they existed)
+   */
+  const addColumnIfMissing = (columnName, typeDef) => {
+    db.run(`ALTER TABLE ipcr_records ADD COLUMN ${columnName} ${typeDef}`, (err) => {
+      if (err && !err.message.includes('duplicate column name')) console.error(`Migration add column ${columnName}:`, err.message);
+    });
+  };
+  addColumnIfMissing('q_score', 'REAL DEFAULT 0');
+  addColumnIfMissing('e_score', 'REAL DEFAULT 0');
+  addColumnIfMissing('t_score', 'REAL DEFAULT 0');
+  addColumnIfMissing('rating', 'REAL DEFAULT 0');
+
+  /**
+   * DEFAULT DEADLINES
+   */
+  const insertDeadline = `
+    INSERT OR IGNORE INTO category_deadlines (category, deadline)
+    VALUES (?, ?)
+  `;
+
+  db.run(insertDeadline, ['syllabus', '2026-04-15']);
+  db.run(insertDeadline, ['courseGuide', '2026-04-20']);
+  db.run(insertDeadline, ['slm', '2026-05-01']);
+  db.run(insertDeadline, ['tos', '2026-05-10']);
+  db.run(insertDeadline, ['gradingSheet', '2026-05-20']);
+
+  console.log('✅ Default deadlines inserted');
   console.log('✅ Database initialization complete');
 });
 

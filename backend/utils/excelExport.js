@@ -1,23 +1,16 @@
 const ExcelJS = require('exceljs');
 const path = require('path');
 const fs = require('fs');
+const db = require('../database');
 
-/**
- * Always resolve template from THIS file's directory
- */
 const TEMPLATE_PATH = path.resolve(__dirname, 'Template.xlsx');
 
-/**
- * EXACT IPCR CELL MAPPING (based on your PDF)
- * Columns:
- * B = Target
- * C = Accomplished
- * D = Q (QL/E)
- * E = E
- * F = T
- * G = Average Rating
- */
+// Keep consistent with backend/saveIPCR.js and backend/server.js defaults
+const DEFAULT_ACADEMIC_YEAR = '2023-2024';
+const DEFAULT_SEMESTER = '1st';
+
 const CELL_MAPPING = {
+
   syllabus: {
     target: 'B19',
     accomplished: 'C19',
@@ -26,6 +19,7 @@ const CELL_MAPPING = {
     T: 'F19',
     rating: 'G19'
   },
+
   courseGuide: {
     target: 'B20',
     accomplished: 'C20',
@@ -34,6 +28,7 @@ const CELL_MAPPING = {
     T: 'F20',
     rating: 'G20'
   },
+
   slm: {
     target: 'B21',
     accomplished: 'C21',
@@ -42,6 +37,7 @@ const CELL_MAPPING = {
     T: 'F21',
     rating: 'G21'
   },
+
   tos: {
     target: 'B30',
     accomplished: 'C30',
@@ -50,6 +46,7 @@ const CELL_MAPPING = {
     T: 'F30',
     rating: 'G30'
   },
+
   gradingSheet: {
     target: 'B34',
     accomplished: 'C34',
@@ -58,120 +55,76 @@ const CELL_MAPPING = {
     T: 'F34',
     rating: 'G34'
   }
+
 };
 
-/**
- * CATEGORY TARGETS
- * (fallback if OCR does not provide target)
- */
-const DEFAULT_TARGETS = {
-  syllabus: 8,
-  courseGuide: 6,
-  slm: 10,
-  tos: 5,
-  gradingSheet: 5
+// DB display name -> internal key used by CELL_MAPPING
+const DB_CATEGORY_TO_KEY = {
+  Syllabus: 'syllabus',
+  'Course Guide': 'courseGuide',
+  SLM: 'slm',
+  TOS: 'tos',
+  'Grading Sheet': 'gradingSheet',
 };
 
-/**
- * CATEGORY WEIGHTS
- */
-const WEIGHTS = {
-  syllabus: 0.5,
-  courseGuide: 0.5,
-  slm: 0.5,
-  tos: 0.5,
-  gradingSheet: 0.5
-};
+async function exportIPCRToExcel(userId) {
 
-/**
- * Convert accomplished vs target → IPCR score (1–5)
- */
-function autoRate(accomplished, target) {
-  if (!target || target === 0) return 0;
-  const ratio = accomplished / target;
-  if (ratio >= 1.0) return 5;
-  if (ratio >= 0.8) return 4;
-  if (ratio >= 0.6) return 3;
-  if (ratio >= 0.4) return 2;
-  return 1;
-}
-
-/**
- * IPCR math (matches your PDF)
- */
-function calculateRowRating(Q, E, T) {
-  return Number(((Q + E + T) / 3).toFixed(2));
-}
-
-function calculateOverallRating(rows) {
-  return Number(
-    rows.reduce((sum, r) => sum + r.rating * r.weight, 0).toFixed(2)
-  );
-}
-
-/**
- * MAIN EXPORT FUNCTION
- * OCR RESULTS SHAPE:
- * {
- *   syllabus: { target: 8, accomplished: 6 },
- *   courseGuide: { accomplished: 5 },
- *   slm: { target: 10, accomplished: 12 }
- * }
- */
-async function exportIPCRToExcel(ocrResults) {
   const workbook = new ExcelJS.Workbook();
 
   if (!fs.existsSync(TEMPLATE_PATH)) {
-    throw new Error(`Template not found at: ${TEMPLATE_PATH}`);
+    throw new Error(`Template not found at ${TEMPLATE_PATH}`);
   }
 
   await workbook.xlsx.readFile(TEMPLATE_PATH);
+
   const worksheet = workbook.getWorksheet('IPCR') || workbook.worksheets[0];
 
-  const computedRows = [];
+  const uid = parseInt(userId, 10) || userId;
 
-  Object.entries(ocrResults).forEach(([key, ocrData]) => {
-  const map = CELL_MAPPING[key];
-  if (!map) return;
+  const rows = await new Promise((resolve, reject) => {
 
-  // ✅ TARGET IS FIXED (SYSTEM-CONTROLLED)
-  const target = Number(DEFAULT_TARGETS[key]) || 0;
+    db.all(`
+      SELECT category,
+             target,
+             accomplished,
+             q_score,
+             e_score,
+             t_score,
+             rating
+      FROM ipcr_records
+      WHERE user_id = ?
+        AND (academic_year = ? OR academic_year IS NULL OR academic_year = '')
+        AND (semester = ? OR semester IS NULL OR semester = '')
+    `,
+    [uid, DEFAULT_ACADEMIC_YEAR, DEFAULT_SEMESTER],
+    (err, rows) => {
 
-  // ✅ ACCOMPLISHED COMES FROM OCR
-  const accomplished = Number(ocrData?.accomplished) || 0;
+      if (err) reject(err);
+      else resolve(rows);
 
-  const weight = WEIGHTS[key] ?? 0;
+    });
 
-  const score = autoRate(accomplished, target);
-  const rating = calculateRowRating(score, score, score);
+  });
 
-  worksheet.getCell(map.target).value = target;
-  worksheet.getCell(map.accomplished).value = accomplished;
-  worksheet.getCell(map.Q).value = score;
-  worksheet.getCell(map.E).value = score;
-  worksheet.getCell(map.T).value = score;
-  worksheet.getCell(map.rating).value = rating;
+  rows.forEach(r => {
 
-  computedRows.push({ rating, weight });
-});
+    const key = DB_CATEGORY_TO_KEY[r.category] || r.category;
+    const map = CELL_MAPPING[key];
 
-  /**
-   * FINAL NUMERICAL RATING (same place as PDF)
-   */
-  worksheet.getCell('E40').value = calculateOverallRating(computedRows);
+    if (!map) return;
+
+    worksheet.getCell(map.target).value = r.target;
+    worksheet.getCell(map.accomplished).value = r.accomplished;
+
+    worksheet.getCell(map.Q).value = r.q_score;
+    worksheet.getCell(map.E).value = r.e_score;
+    worksheet.getCell(map.T).value = r.t_score;
+
+    worksheet.getCell(map.rating).value = r.rating;
+
+  });
 
   return await workbook.xlsx.writeBuffer();
 }
-
-/**
- * EXAMPLE OCR INPUT (REMOVE IN PRODUCTION)
- */
-const ocrResults = {
-  syllabus: { target: 4, accomplished: 2 },
-  courseGuide: { target: 2, accomplished: 2 },
-  slm: { target: 10, accomplished: 12 },
-  tos: { accomplished: 5 },
-  gradingSheet: { accomplished: 4 }
-};
 
 module.exports = { exportIPCRToExcel };
