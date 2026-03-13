@@ -31,13 +31,18 @@ db.serialize(() => {
 
 
   /**
-   * CATEGORY DEADLINES TABLE
+   * SEMESTER CONFIG TABLE
+   * Stores the active academic period configured by admin.
    */
   db.run(`
-    CREATE TABLE IF NOT EXISTS category_deadlines (
+    CREATE TABLE IF NOT EXISTS semester_config (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      category TEXT UNIQUE NOT NULL,
-      deadline DATE NOT NULL
+      academic_year TEXT NOT NULL,
+      semester TEXT NOT NULL,
+      start_date DATE,
+      end_date DATE,
+      is_active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
@@ -84,7 +89,6 @@ db.serialize(() => {
 
   /**
    * IPCR RECORDS TABLE
-   * Added q_score, e_score, t_score
    */
   db.run(`
     CREATE TABLE IF NOT EXISTS ipcr_records (
@@ -102,11 +106,13 @@ db.serialize(() => {
       rating REAL DEFAULT 0,
 
       submission_date DATE,
-      completion_date DATE,
       remarks TEXT,
 
       academic_year TEXT DEFAULT '2023-2024',
       semester TEXT DEFAULT '1st',
+
+      start_date DATE,
+      end_date DATE,
 
       FOREIGN KEY (user_id) REFERENCES users(id),
       UNIQUE(user_id, category, academic_year, semester)
@@ -121,33 +127,40 @@ db.serialize(() => {
   db.run(`CREATE INDEX IF NOT EXISTS idx_documents_category ON documents(category)`);
 
   /**
-   * MIGRATION: ensure ipcr_records has rating columns (for DBs created before they existed)
+   * MIGRATIONS — add columns to existing tables if they are missing
    */
-  const addColumnIfMissing = (columnName, typeDef) => {
-    db.run(`ALTER TABLE ipcr_records ADD COLUMN ${columnName} ${typeDef}`, (err) => {
-      if (err && !err.message.includes('duplicate column name')) console.error(`Migration add column ${columnName}:`, err.message);
+  const addColumnIfMissing = (table, columnName, typeDef) => {
+    db.run(`ALTER TABLE ${table} ADD COLUMN ${columnName} ${typeDef}`, (err) => {
+      if (err && !err.message.includes('duplicate column name')) {
+        console.error(`Migration add column ${table}.${columnName}:`, err.message);
+      }
     });
   };
-  addColumnIfMissing('q_score', 'REAL DEFAULT 0');
-  addColumnIfMissing('e_score', 'REAL DEFAULT 0');
-  addColumnIfMissing('t_score', 'REAL DEFAULT 0');
-  addColumnIfMissing('rating', 'REAL DEFAULT 0');
+
+  // Rating score columns (legacy migration)
+  addColumnIfMissing('ipcr_records', 'q_score', 'REAL DEFAULT 0');
+  addColumnIfMissing('ipcr_records', 'e_score', 'REAL DEFAULT 0');
+  addColumnIfMissing('ipcr_records', 't_score', 'REAL DEFAULT 0');
+  addColumnIfMissing('ipcr_records', 'rating',  'REAL DEFAULT 0');
+
+  // New semester date columns
+  addColumnIfMissing('ipcr_records', 'start_date', 'DATE');
+  addColumnIfMissing('ipcr_records', 'end_date',   'DATE');
 
   /**
-   * DEFAULT DEADLINES
+   * SEED: default semester_config if none exists
    */
-  const insertDeadline = `
-    INSERT OR IGNORE INTO category_deadlines (category, deadline)
-    VALUES (?, ?)
-  `;
+  db.get(`SELECT COUNT(*) as cnt FROM semester_config`, (err, row) => {
+    if (!err && row && row.cnt === 0) {
+      db.run(
+        `INSERT INTO semester_config (academic_year, semester, start_date, end_date, is_active)
+         VALUES (?, ?, ?, ?, 1)`,
+        ['2025-2026', '1st Semester', '2025-08-01', '2025-12-15'],
+        () => console.log('✅ Default semester config seeded')
+      );
+    }
+  });
 
-  db.run(insertDeadline, ['syllabus', '2026-04-15']);
-  db.run(insertDeadline, ['courseGuide', '2026-04-20']);
-  db.run(insertDeadline, ['slm', '2026-05-01']);
-  db.run(insertDeadline, ['tos', '2026-05-10']);
-  db.run(insertDeadline, ['gradingSheet', '2026-05-20']);
-
-  console.log('✅ Default deadlines inserted');
   console.log('✅ Database initialization complete');
 });
 

@@ -17,12 +17,11 @@ class GoogleDriveService {
   }
 
   /**
-   * Find or create a folder by name
+   * Find or create a folder by name under an optional parent.
    */
   async findOrCreateFolder(folderName, parentId = null) {
     try {
-      // Search for existing folder
-      const query = parentId 
+      const query = parentId
         ? `name='${folderName}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`
         : `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
 
@@ -56,20 +55,31 @@ class GoogleDriveService {
   }
 
   /**
-   * Upload a file to Google Drive
-   * Creates folder structure: LSPUDOCS/IPCR/{category}/
+   * Upload a file to Google Drive.
+   *
+   * New folder hierarchy:
+   *   IPCR / {academicYear} / {semester} / {facultyName} / {category} / file
+   *
+   * @param {string} filePath       - local path to the file
+   * @param {string} fileName       - original filename
+   * @param {string} category       - e.g. "Syllabus"
+   * @param {string} [academicYear] - e.g. "2025-2026"
+   * @param {string} [semester]     - e.g. "1st Semester"
+   * @param {string} [facultyName]  - uploader's display name
    */
-  async uploadFile(filePath, fileName, category) {
+  async uploadFile(filePath, fileName, category, academicYear = '2025-2026', semester = '1st Semester', facultyName = 'Faculty') {
     try {
-      // Create folder hierarchy
-      const lspuFolder = await this.findOrCreateFolder('LSPUDOCS');
-      const ipcrFolder = await this.findOrCreateFolder('IPCR', lspuFolder.id);
-      const categoryFolder = await this.findOrCreateFolder(category, ipcrFolder.id);
+      // Build hierarchy: IPCR → year → semester → faculty → category
+      const ipcrFolder    = await this.findOrCreateFolder('IPCR');
+      const yearFolder    = await this.findOrCreateFolder(academicYear, ipcrFolder.id);
+      const semFolder     = await this.findOrCreateFolder(semester, yearFolder.id);
+      const facultyFolder = await this.findOrCreateFolder(facultyName, semFolder.id);
+      const catFolder     = await this.findOrCreateFolder(category, facultyFolder.id);
 
       // Upload file
       const fileMetadata = {
         name: fileName,
-        parents: [categoryFolder.id]
+        parents: [catFolder.id]
       };
 
       const media = {
@@ -83,8 +93,9 @@ class GoogleDriveService {
         fields: 'id, name, webViewLink, webContentLink'
       });
 
+      const folderPath = `IPCR/${academicYear}/${semester}/${facultyName}/${category}`;
       console.log(`✅ Uploaded to Google Drive: ${file.data.name}`);
-      console.log(`   Folder: LSPUDOCS/IPCR/${category}`);
+      console.log(`   Path: ${folderPath}`);
       console.log(`   Link: ${file.data.webViewLink}`);
 
       return {
@@ -92,7 +103,7 @@ class GoogleDriveService {
         fileName: file.data.name,
         webViewLink: file.data.webViewLink,
         webContentLink: file.data.webContentLink,
-        folderPath: `LSPUDOCS/IPCR/${category}`
+        folderPath
       };
     } catch (error) {
       console.error('Error uploading to Google Drive:', error.message);
@@ -101,7 +112,7 @@ class GoogleDriveService {
   }
 
   /**
-   * List files in a folder
+   * List files in a folder.
    */
   async listFiles(folderId) {
     try {
@@ -119,13 +130,11 @@ class GoogleDriveService {
   }
 
   /**
-   * Delete a file
+   * Delete a file.
    */
   async deleteFile(fileId) {
     try {
-      await this.drive.files.delete({
-        fileId: fileId
-      });
+      await this.drive.files.delete({ fileId });
       console.log(`🗑️ Deleted file: ${fileId}`);
       return true;
     } catch (error) {
@@ -135,12 +144,12 @@ class GoogleDriveService {
   }
 
   /**
-   * Get file metadata
+   * Get file metadata.
    */
   async getFileMetadata(fileId) {
     try {
       const response = await this.drive.files.get({
-        fileId: fileId,
+        fileId,
         fields: 'id, name, mimeType, size, webViewLink, createdTime, modifiedTime'
       });
 

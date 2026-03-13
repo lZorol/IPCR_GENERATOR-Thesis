@@ -2,7 +2,17 @@ import React from 'react';
 import { BarChart3, CheckCircle, Clock, Download } from 'lucide-react';
 import { CATEGORY_NAMES } from '../constants';
 
-const DashboardPage = ({ user, ipcrData, onExport }) => {
+/**
+ * DashboardPage
+ *
+ * Props:
+ *   user             – logged-in user object
+ *   ipcrData         – object of { category: { target, accomplished, rating, submitted } }
+ *   onExport         – callback to trigger Excel download
+ *   selectedYear     – currently active academic year string
+ *   selectedSemester – currently active semester string
+ */
+const DashboardPage = ({ user, ipcrData, onExport, selectedYear, selectedSemester }) => {
   const calculateRating = (target, accomplished) => {
     if (target === 0) return 0;
     const ratio = accomplished / target;
@@ -30,6 +40,7 @@ const DashboardPage = ({ user, ipcrData, onExport }) => {
 
   return (
     <div className="space-y-6">
+
       {/* Google Drive Status */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <div className="flex items-center gap-3">
@@ -57,7 +68,12 @@ const DashboardPage = ({ user, ipcrData, onExport }) => {
       <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-lg shadow-lg p-8 text-white">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-blue-100 text-sm font-medium mb-2">Overall IPCR Rating</p>
+            <p className="text-blue-100 text-sm font-medium mb-1">Overall IPCR Rating</p>
+            {selectedYear && selectedSemester && (
+              <p className="text-blue-200 text-xs mb-2">
+                AY {selectedYear} · {selectedSemester}
+              </p>
+            )}
             <h2 className="text-5xl font-bold">{calculateOverallRating()}</h2>
             <p className="text-blue-100 text-sm mt-2">out of 5.00</p>
           </div>
