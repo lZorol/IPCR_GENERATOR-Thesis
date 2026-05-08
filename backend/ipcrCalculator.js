@@ -41,11 +41,11 @@ function autoRate(accomplished, target) {
   // Use 5 if target is missing or 0
   const effectiveTarget = target > 0 ? target : 5;
   
-  // Calculate raw ratio-based score (0 to 5 scale)
+  // Calculate raw ratio-based score (1 to 5 scale)
   const rawRating = (accomplished / effectiveTarget) * 5;
   
-  // Clamp between 0.00 and 5.00
-  const finalRating = Math.max(0, Math.min(5, rawRating));
+  // Clamp between 1.00 and 5.00
+  const finalRating = Math.max(1, Math.min(5, rawRating));
   
   return parseFloat(finalRating.toFixed(2));
 }

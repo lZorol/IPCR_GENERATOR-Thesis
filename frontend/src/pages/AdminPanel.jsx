@@ -209,8 +209,8 @@ const AdminPanel = ({ currentUser, adminData, selectedYear, selectedSemester, on
             <tbody className="divide-y divide-gray-100">
               {filteredData.map((faculty, index) => {
                 
-                // ✅ REPLACED: Use pre-calculated overall_rating from backend
-                const overallRating = faculty.overall_rating != null ? faculty.overall_rating : computeOverallRating(faculty.ipcrData);
+                // ✅ REPLACED: Use computeOverallRating instead of avg_rating
+                const overallRating = computeOverallRating(faculty.ipcrData);
 
                 return (
                   <React.Fragment key={faculty.id || index}>

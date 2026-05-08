@@ -19,9 +19,9 @@ const DashboardPage = ({
   const [viewMode, setViewMode] = useState("category");
 
   const calculateRating = (target, accomplished) => {
-    if (target === 0) return 0;
+    if (target === 0) return 1;
     const rawRating = (accomplished / target) * 5;
-    const finalRating = Math.max(0, Math.min(5, rawRating));
+    const finalRating = Math.max(1, Math.min(5, rawRating));
     return parseFloat(finalRating.toFixed(2));
   };
 

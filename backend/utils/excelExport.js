@@ -178,8 +178,8 @@ async function exportIPCRToExcel(userId, academicYear, semester) {
     const safeTarget = Number(target) > 0 ? Number(target) : 5;
     const acc = Number(accomplished) || 0;
 
-    // Explicitly declared baseRating with 0-5 bounds
-    let baseRating = Math.max(0, Math.min(5, (acc / safeTarget) * 5));
+    // Explicitly declared baseRating with 1-5 bounds
+    let baseRating = Math.max(1, Math.min(5, (acc / safeTarget) * 5));
 
     const qty = baseRating;
     const qle = baseRating;
