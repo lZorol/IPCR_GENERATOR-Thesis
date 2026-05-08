@@ -79,7 +79,7 @@ const App = () => {
       const params = new URLSearchParams({ year, semester });
       const res  = await fetch(`${API_URL}/ipcr/${userId}?${params}`);
       const data = await res.json();
-      setIpcrData(data);
+      setIpcrData(data.ratings || data); // Fallback for safety during transition
     } catch (error) {
       console.error('Error fetching IPCR data:', error);
     }

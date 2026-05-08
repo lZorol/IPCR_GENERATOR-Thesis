@@ -231,31 +231,37 @@ app.get("/api/ipcr/:userId", async (req, res) => {
       };
     });
 
-    // Also ensure ratings are initialized for categories with 0 accomplishments
-    Object.keys(ipcrData).forEach(key => {
+    // 4. Ensure all master categories have a rating (min 1.0)
+    const masterKeys = Object.keys(categoryMap);
+    masterKeys.forEach(key => {
       if (ipcrData[key].rating === undefined) {
         const target = ipcrData[key].target > 0 ? ipcrData[key].target : 5;
-        const acc = ipcrData[key].accomplished;
-        
-        const baseRating = autoRate(acc, target);
-        const qty = baseRating;
-        const qle = baseRating;
-        const timeliness = baseRating;
-        const average = (qty + qle + timeliness) / 3;
-
+        const rating = autoRate(0, target);
         ipcrData[key] = {
           ...ipcrData[key],
-          target,
-          rating: Number(average.toFixed(2)),
-          qty: Number(qty.toFixed(2)),
-          qle: Number(qle.toFixed(2)),
-          timeliness: Number(timeliness.toFixed(2)),
-          average: Number(average.toFixed(2))
+          rating,
+          qty: rating,
+          qle: rating,
+          timeliness: rating,
+          average: rating
         };
       }
     });
 
-    res.json(ipcrData);
+    // 5. Final Aggregation (Strict All-Category Inclusion)
+    let totalCategoryRatings = 0;
+    masterKeys.forEach(key => {
+      totalCategoryRatings += ipcrData[key].rating;
+    });
+
+    const overallRating = masterKeys.length > 0 
+      ? Number((totalCategoryRatings / masterKeys.length).toFixed(2)) 
+      : 1.0;
+
+    res.json({
+      ratings: ipcrData,
+      overall_rating: overallRating
+    });
   } catch (err) {
     console.error('GET /api/ipcr/:userId error:', err);
     res.status(500).json({ error: err.message });
@@ -845,10 +851,16 @@ app.get("/api/admin/ipcr", async (req, res) => {
         }
       });
 
-      // Compute Overall Rating for the Admin Summary
-      const ratings = Object.values(ipcrData).map(d => d.rating);
-      const overallRating = ratings.length > 0 
-        ? Number((ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(2))
+      // Compute Overall Rating for the Admin Summary (Strict All-Category Inclusion)
+      const masterKeys = Object.keys(categoryMap);
+      let totalCategoryRatings = 0;
+
+      masterKeys.forEach(key => {
+        totalCategoryRatings += ipcrData[key].rating;
+      });
+
+      const overallRating = masterKeys.length > 0 
+        ? Number((totalCategoryRatings / masterKeys.length).toFixed(2))
         : 1.0;
 
       return {
