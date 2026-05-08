@@ -816,20 +816,61 @@ app.get("/api/admin/ipcr", async (req, res) => {
         }
       });
       Object.entries(byCategory).forEach(([key, row]) => {
+        const target = ipcrData[key].target > 0 ? ipcrData[key].target : 5;
+        const acc = row.accomplished;
+        const rawRating = autoRate(acc, target);
+        const rating = Number(rawRating.toFixed(2));
+
         ipcrData[key] = {
-          target: ipcrData[key].target,
-          accomplished: row.accomplished,
+          target,
+          accomplished: acc,
           submitted: row.submission_date,
-          qty: autoRate(row.accomplished, ipcrData[key].target),
-          qle: autoRate(row.accomplished, ipcrData[key].target),
-          timeliness: autoRate(row.accomplished, ipcrData[key].target),
-          rating: row.rating != null ? Number(row.rating) : autoRate(row.accomplished, ipcrData[key].target),
+          qty: rating,
+          qle: rating,
+          timeliness: rating,
+          rating: rating,
           hasTargets,
         };
       });
 
+      // Ensure all categories have a rating (including those with 0 accomplishments)
+      Object.keys(ipcrData).forEach(key => {
+        if (ipcrData[key].rating === undefined) {
+          const target = ipcrData[key].target > 0 ? ipcrData[key].target : 5;
+          const rawRating = autoRate(0, target);
+          const rating = Number(rawRating.toFixed(2));
+          ipcrData[key] = {
+            ...ipcrData[key],
+            target,
+            rating,
+            qty: rating,
+            qle: rating,
+            timeliness: rating
+          };
+        }
+      });
+
+      // Calculate Overall Rating (WEIGHTED: 72/4/4/20)
+      const INS_KEYS = ["syllabus", "courseGuide", "slm", "attendanceSheet", "classRecord", "evaluationOfTeachingEffectiveness", "classroomObservation", "tos", "testQuestions", "answerKeys", "gradingSheet", "facultyAndStudentsSeekAdvices", "accomplishmentReport"];
+      const RES_KEYS = ["randdProposal", "researchImplemented", "researchPresented", "researchPublished", "intellectualPropertyRights", "researchUtilizedDeveloped", "numberOfCitations"];
+      const EXT_KEYS = ["extentionProposal", "personsTrained", "personServiceRating", "personGivenTraining", "technicalAdvice"];
+      const SUPT_KEYS = ["accomplishmentReportSupport", "attendanceFlagCeremony", "attendanceFlagLowering", "attendanceHealthAndWellnessProgram", "attendanceSchoolCelebrations", "trainingSeminarConferenceCertificate", "atttendanceFacultyMeeting", "attendanceISOAndRelatedActivities", "attendaceSpiritualActivities"];
+
+      const getSafeAvg = (keys) => {
+        const vals = keys.map(k => ipcrData[k]?.rating).filter(v => v != null);
+        return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+      };
+
+      const INS = getSafeAvg(INS_KEYS);
+      const RES = getSafeAvg(RES_KEYS);
+      const EXT = getSafeAvg(EXT_KEYS);
+      const SUPT = getSafeAvg(SUPT_KEYS);
+
+      const overallRating = (INS * 0.72) + (RES * 0.04) + (EXT * 0.04) + (SUPT * 0.20);
+
       return {
         ...user,
+        overall_rating: Number(overallRating.toFixed(2)),
         ipcrData
       };
     }));
