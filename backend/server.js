@@ -816,20 +816,44 @@ app.get("/api/admin/ipcr", async (req, res) => {
         }
       });
       Object.entries(byCategory).forEach(([key, row]) => {
+        const target = ipcrData[key].target > 0 ? ipcrData[key].target : 5;
+        const rating = autoRate(row.accomplished, target);
         ipcrData[key] = {
-          target: ipcrData[key].target,
+          target,
           accomplished: row.accomplished,
           submitted: row.submission_date,
-          qty: autoRate(row.accomplished, ipcrData[key].target),
-          qle: autoRate(row.accomplished, ipcrData[key].target),
-          timeliness: autoRate(row.accomplished, ipcrData[key].target),
-          rating: row.rating != null ? Number(row.rating) : autoRate(row.accomplished, ipcrData[key].target),
+          qty: rating,
+          qle: rating,
+          timeliness: rating,
+          rating: rating,
           hasTargets,
         };
       });
 
+      // Ensure all categories have a rating (min 1.0)
+      Object.keys(ipcrData).forEach(key => {
+        if (ipcrData[key].rating === undefined) {
+          const target = ipcrData[key].target > 0 ? ipcrData[key].target : 5;
+          const rating = autoRate(0, target);
+          ipcrData[key] = {
+            ...ipcrData[key],
+            rating,
+            qty: rating,
+            qle: rating,
+            timeliness: rating
+          };
+        }
+      });
+
+      // Compute Overall Rating for the Admin Summary
+      const ratings = Object.values(ipcrData).map(d => d.rating);
+      const overallRating = ratings.length > 0 
+        ? Number((ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(2))
+        : 1.0;
+
       return {
         ...user,
+        overall_rating: overallRating,
         ipcrData
       };
     }));
