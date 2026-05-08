@@ -1,12 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../database');
+const { categoryMap } = require('../ipcrCalculator');
 
 // Mapping from camelCase frontend keys to snake_case DB columns
 const KEY_TO_COL = {
   syllabus: 'syllabus',
   courseGuide: 'course_guide',
   slm: 'slm',
+  communityImmersion: 'community_immersion',
   gradingSheet: 'grading_sheet',
   tos: 'tos',
   attendanceSheet: 'attendance_sheet',
@@ -121,6 +123,21 @@ router.post('/targets/save', (req, res) => {
 
   db.run(sql, [userId, academic_year, semester, ...values], function (err) {
     if (err) return res.status(500).json({ error: err.message });
+    
+    // SYNC: Overwrite old targets in ipcr_records without erasing accomplished counts
+    Object.entries(targets).forEach(([key, value]) => {
+      const category = categoryMap[key];
+      if (category) {
+        db.run(
+          `INSERT INTO ipcr_records (user_id, category, target, accomplished, academic_year, semester)
+           VALUES (?, ?, ?, 0, ?, ?)
+           ON CONFLICT(user_id, category, academic_year, semester) 
+           DO UPDATE SET target = excluded.target`,
+          [userId, category, value, academic_year, semester]
+        );
+      }
+    });
+
     res.json({ success: true, id: this.lastID });
   });
 });

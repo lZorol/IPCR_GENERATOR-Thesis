@@ -44,6 +44,7 @@ const CELL_MAPPING = {
   syllabus: mapRow(19, "start"),
   courseGuide: mapRow(20, "start"),
   slm: mapRow(21, "start"),
+  communityImmersion: mapRow(22, "start"),
   attendanceSheet: mapRow(24, "end"),
   classRecord: mapRow(25, "end"),
   evaluationOfTeachingEffectiveness: mapRow(27, "end"),
@@ -81,6 +82,7 @@ const DB_CATEGORY_TO_KEY = {
   Syllabus: "syllabus",
   "Course Guide": "courseGuide",
   SLM: "slm",
+  "Number of subject areas with community immersion/involvement component": "communityImmersion",
   TOS: "tos",
   "Grading Sheet": "gradingSheet",
   "Attendance Sheet": "attendanceSheet",
@@ -172,17 +174,32 @@ async function exportIPCRToExcel(userId, academicYear, semester) {
     // TARGET LOGIC: DB Record -> user_targets table -> Hard Default (5)
     // Converts camelCase to snake_case to match user_targets columns
     const dbColumnName = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
-    const target = r?.target ?? userTargetRow?.[dbColumnName] ?? 5;
+    const rawTarget = r?.target ?? userTargetRow?.[dbColumnName];
+    const target = (rawTarget != null && Number(rawTarget) > 0) ? Number(rawTarget) : 5;
     
-    const accomplished = r?.accomplished ?? 0;
-    const computed = computeCategory(key, accomplished, target);
+    const accomplished = Number(r?.accomplished) || 0;
+    
+    // DYNAMIC CALCULATION: Compute Q, E, T, A on the fly for Excel
+    const safeTarget = Number(target) > 0 ? Number(target) : 5;
+    const acc = Number(accomplished) || 0;
+    
+    // Explicitly declared baseRating with 0-5 bounds
+    let baseRating = Math.max(0, Math.min(5, (acc / safeTarget) * 5));
+    
+    const qty = baseRating;
+    const qle = baseRating;
+    const timeliness = baseRating;
+    const average = (qty + qle + timeliness) / 3;
 
-    worksheet.getCell(map.target).value = Number(target);
-    worksheet.getCell(map.accomplished).value = Number(accomplished);
-    worksheet.getCell(map.Q).value = r?.q_score ?? computed.Q;
-    worksheet.getCell(map.E).value = r?.e_score ?? computed.E;
-    worksheet.getCell(map.T).value = r?.t_score ?? computed.T;
-    worksheet.getCell(map.rating).value = r?.rating ?? computed.rating;
+    // Strict Sanitization to prevent Excel corruption (NaN/Infinity)
+    worksheet.getCell(map.target).value = Number(target) || 5;
+    worksheet.getCell(map.accomplished).value = Number(accomplished) || 0;
+    
+    // Assign dynamic Q, E, T, A values
+    worksheet.getCell(map.Q).value = Number(qty.toFixed(2));
+    worksheet.getCell(map.E).value = Number(qle.toFixed(2));
+    worksheet.getCell(map.T).value = Number(timeliness.toFixed(2));
+    worksheet.getCell(map.rating).value = Number(average.toFixed(2));
 
     // DATE LOGIC: DB Record -> Global Semester Config -> Empty
     if (map.dateCell) {

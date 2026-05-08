@@ -13,7 +13,7 @@ import { API_URL, CATEGORY_NAMES, CATEGORY_GROUPS, GROUP_NAMES } from "../consta
 
 // ─── Ordered list of all category keys ────────────────────────────────────────
 const ALL_KEYS = [
-  "syllabus","courseGuide","slm","gradingSheet","tos","attendanceSheet",
+  "syllabus","courseGuide","slm","communityImmersion","gradingSheet","tos","attendanceSheet",
   "classRecord","evaluationOfTeachingEffectiveness","classroomObservation",
   "testQuestions","answerKeys","facultyAndStudentsSeekAdvices","accomplishmentReport",
   "randdProposal","researchImplemented","researchPresented","researchPublished",

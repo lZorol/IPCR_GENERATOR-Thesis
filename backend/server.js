@@ -16,6 +16,7 @@ const presetsRoutes = require("./routes/presets");
 const academicYearsRoutes = require("./routes/academicYears");
 const GoogleDriveService = require("./utils/googleDrive");
 const { saveIPCR } = require("./saveIPCR");
+const { categoryMap, autoRate } = require("./ipcrCalculator");
 const initializeAcademicYears = require("./utils/initializeAcademicYears");
 const detectSchoolYear = require("./utils/detectSchoolYear");
 const createSchoolYearIfMissing = require("./utils/createSchoolYearIfMissing");
@@ -39,47 +40,7 @@ app.use("/api", academicYearsRoutes);
 // Health check
 app.get("/api/health", (req, res) => res.json({ status: "ok", timestamp: new Date() }));
 
-// ──────────────────────────────────────────────────────────────────────────────
-// CATEGORY MAP
-// ──────────────────────────────────────────────────────────────────────────────
-const categoryMap = {
-  syllabus: "Syllabus",
-  courseGuide: "Course Guide",
-  slm: "SLM",
-  gradingSheet: "Grading Sheet",
-  tos: "TOS",
-  attendanceSheet: "Attendance Sheet",
-  classRecord: "Class Record",
-  evaluationOfTeachingEffectiveness: "Evaluation of Teaching Effectiveness",
-  classroomObservation: "Classroom Observation",
-  testQuestions: "Test Questions",
-  answerKeys: "Answer Keys",
-  facultyAndStudentsSeekAdvices: "Faculty and Students Seek Advices",
-  accomplishmentReport: "Accomplishment Report",
-  randdProposal: "R&D Proposal",
-  researchImplemented: "Research Implemented",
-  researchPresented: "Research Presented",
-  researchPublished: "Research Published",
-  intellectualPropertyRights: "Intellectual Property Rights",
-  researchUtilizedDeveloped: "Research Utilized/Developed",
-  numberOfCitations: "Number of Citations",
-  extentionProposal: "Extension Proposal",
-  personsTrained: "Persons Trained",
-  personServiceRating: "Person Service Rating",
-  personGivenTraining: "Person Given Training",
-  technicalAdvice: "Technical Advice",
-  accomplishmentReportSupport: "Accomplishment Report Support",
-  attendanceFlagCeremony: "Attendance Flag Ceremony",
-  attendanceFlagLowering: "Attendance Flag Lowering",
-  attendanceHealthAndWellnessProgram: "Attendance Health and Wellness Program",
-  attendanceSchoolCelebrations: "Attendance School Celebrations",
-  trainingSeminarConferenceCertificate: "Training/Seminar/Conference Certificate",
-  atttendanceFacultyMeeting: "Attendance Faculty Meeting",
-  attendanceISOAndRelatedActivities: "Attendance ISO and Related Activities",
-  attendaceSpiritualActivities: "Attendance Spiritual Activities"
-
-};
-
+// CATEGORY MAP moved to ipcrCalculator.js
 // ──────────────────────────────────────────────────────────────────────────────
 // HELPER: resolve active semester config from DB
 // ──────────────────────────────────────────────────────────────────────────────
@@ -245,15 +206,53 @@ app.get("/api/ipcr/:userId", async (req, res) => {
         if (!byCategory[key] || hasRating) byCategory[key] = row;
       }
     });
+
     Object.entries(byCategory).forEach(([key, row]) => {
-      // Keep user target; only update accomplished/submitted/rating from records
+      // DYNAMIC CALCULATION: Compute Q, E, T, A on the fly
+      const target = ipcrData[key].target > 0 ? ipcrData[key].target : 5;
+      const accomplished = row.accomplished;
+      
+      const baseRating = autoRate(accomplished, target);
+      const qty = baseRating;
+      const qle = baseRating;
+      const timeliness = baseRating;
+      const average = (qty + qle + timeliness) / 3;
+
       ipcrData[key] = {
-        target: ipcrData[key].target,
-        accomplished: row.accomplished,
+        target,
+        accomplished,
         submitted: row.submission_date,
-        rating: row.rating != null ? Number(row.rating) : null,
+        rating: Number(average.toFixed(2)),
+        qty: Number(qty.toFixed(2)),
+        qle: Number(qle.toFixed(2)),
+        timeliness: Number(timeliness.toFixed(2)),
+        average: Number(average.toFixed(2)),
         hasTargets,
       };
+    });
+
+    // Also ensure ratings are initialized for categories with 0 accomplishments
+    Object.keys(ipcrData).forEach(key => {
+      if (ipcrData[key].rating === undefined) {
+        const target = ipcrData[key].target > 0 ? ipcrData[key].target : 5;
+        const acc = ipcrData[key].accomplished;
+        
+        const baseRating = autoRate(acc, target);
+        const qty = baseRating;
+        const qle = baseRating;
+        const timeliness = baseRating;
+        const average = (qty + qle + timeliness) / 3;
+
+        ipcrData[key] = {
+          ...ipcrData[key],
+          target,
+          rating: Number(average.toFixed(2)),
+          qty: Number(qty.toFixed(2)),
+          qle: Number(qle.toFixed(2)),
+          timeliness: Number(timeliness.toFixed(2)),
+          average: Number(average.toFixed(2))
+        };
+      }
     });
 
     res.json(ipcrData);
@@ -477,9 +476,13 @@ app.post("/api/documents/upload", upload.array("files"), async (req, res) => {
           contentType: "application/pdf",
         });
 
-        const mlResponse = await axios.post("http://localhost:5000/classify", formData, {
+        // Hard fix: Explicitly use Port 5050 to bypass Windows port 5000 conflicts
+        const mlEndpoint = "http://127.0.0.1:5050/classify";
+        console.log(`🤖 Requesting AI classification at: ${mlEndpoint}`);
+
+        const mlResponse = await axios.post(mlEndpoint, formData, {
           headers: formData.getHeaders(),
-          timeout: 60000,
+          timeout: 30000,
         });
         const { category, confidence } = mlResponse.data;
         const dbCategory = categoryMap[category] || category;
@@ -517,19 +520,19 @@ app.post("/api/documents/upload", upload.array("files"), async (req, res) => {
         );
 
         // Update IPCR record (scoped to year + semester)
-        const row = await new Promise((resolve, reject) =>
+        // Hard Fix: We no longer fetch the target here to avoid passing a default '5' 
+        // that overwrites custom settings. We let saveIPCR handle target resolution.
+        const ipcrRecord = await new Promise((resolve) =>
           db.get(
-            `SELECT target, accomplished FROM ipcr_records
+            `SELECT accomplished FROM ipcr_records
              WHERE user_id = ? AND category = ? AND academic_year = ? AND semester = ?`,
             [userId, dbCategory, academicYear, semester],
-            (err, r) => (err ? reject(err) : resolve(r))
+            (err, r) => resolve(r)
           )
         );
 
-        const target = row?.target || 0;
-        const accomplished = (row?.accomplished || 0) + 1;
-
-        await saveIPCR(userId, dbCategory, accomplished, target, academicYear, semester);
+        const newAccomplished = (ipcrRecord?.accomplished || 0) + 1;
+        await saveIPCR(userId, dbCategory, newAccomplished, null, academicYear, semester);
 
         // Store the category-specific folder link on this category's ipcr_record row
         if (driveResult && driveResult.categoryFolderLinks) {
@@ -753,7 +756,7 @@ app.get("/api/admin/ipcr", async (req, res) => {
       WHERE u.role = 'professor'
       GROUP BY u.id
     `;
-    
+
     const usersRows = await new Promise((resolve, reject) => {
       db.all(query, [academicYear, semester], (err, rows) => {
         if (err) reject(err);
@@ -817,7 +820,10 @@ app.get("/api/admin/ipcr", async (req, res) => {
           target: ipcrData[key].target,
           accomplished: row.accomplished,
           submitted: row.submission_date,
-          rating: row.rating != null ? Number(row.rating) : null,
+          qty: autoRate(row.accomplished, ipcrData[key].target),
+          qle: autoRate(row.accomplished, ipcrData[key].target),
+          timeliness: autoRate(row.accomplished, ipcrData[key].target),
+          rating: row.rating != null ? Number(row.rating) : autoRate(row.accomplished, ipcrData[key].target),
           hasTargets,
         };
       });

@@ -4,6 +4,7 @@ export const CATEGORY_NAMES = {
   syllabus:     'Syllabus',
   courseGuide:  'Course Guide',
   slm:          'Student Learning Materials',
+  communityImmersion: 'Number of subject areas with community immersion/involvement component',
   gradingSheet: 'Grading Sheet',
   tos:          'Table of Specifications',
   attendanceSheet: 'Attendance Sheet',
@@ -40,7 +41,7 @@ export const CATEGORY_NAMES = {
 
 export const CATEGORY_GROUPS = {
   instruction: [
-    'syllabus', 'courseGuide', 'slm', 'gradingSheet', 'tos', 'attendanceSheet', 'classRecord',
+    'syllabus', 'courseGuide', 'slm', 'communityImmersion', 'gradingSheet', 'tos', 'attendanceSheet', 'classRecord',
     'evaluationOfTeachingEffectiveness', 'classroomObservation', 'testQuestions', 'answerKeys',
     'facultyAndStudentsSeekAdvices', 'accomplishmentReport'
   ],
