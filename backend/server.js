@@ -298,7 +298,7 @@ app.post("/api/ipcr/targets", async (req, res) => {
 
 app.get("/api/users/regular", (req, res) => {
   db.all(
-    `SELECT id, name FROM users WHERE is_regular_faculty = 1 ORDER BY name ASC`,
+    `SELECT id, name FROM users WHERE role = 'professor' ORDER BY name ASC`,
     [],
     (err, rows) => {
       if (err) return res.status(500).json({ error: err.message });
@@ -475,23 +475,35 @@ app.post("/api/documents/upload", upload.array("files"), async (req, res) => {
       try {
         console.log(`Processing file: ${file.originalname}`);
 
-        // ML classification
-        const formData = new FormData();
-        formData.append("file", fs.createReadStream(file.path), {
-          filename: file.originalname,
-          contentType: "application/pdf",
-        });
+        const manualCategory = req.body.manualCategory || 'auto';
+        let dbCategory, confidence;
 
-        // Hard fix: Explicitly use Port 5050 to bypass Windows port 5000 conflicts
-        const mlEndpoint = "http://127.0.0.1:5050/classify";
-        console.log(`🤖 Requesting AI classification at: ${mlEndpoint}`);
+        if (manualCategory !== 'auto') {
+          // USER BYPASS: Use manual category instead of AI
+          dbCategory = categoryMap[manualCategory] || manualCategory;
+          confidence = 1.0;
+          console.log(`👤 Manual Category selected: ${dbCategory}. Bypassing AI.`);
+        } else {
+          // AI CLASSIFICATION
+          const formData = new FormData();
+          formData.append("file", fs.createReadStream(file.path), {
+            filename: file.originalname,
+            contentType: "application/pdf",
+          });
 
-        const mlResponse = await axios.post(mlEndpoint, formData, {
-          headers: formData.getHeaders(),
-          timeout: 30000,
-        });
-        const { category, confidence } = mlResponse.data;
-        const dbCategory = categoryMap[category] || category;
+          // Hard fix: Explicitly use Port 5050 to bypass Windows port 5000 conflicts
+          const mlEndpoint = "http://127.0.0.1:5050/classify";
+          console.log(`🤖 Requesting AI classification at: ${mlEndpoint}`);
+
+          const mlResponse = await axios.post(mlEndpoint, formData, {
+            headers: formData.getHeaders(),
+            timeout: 30000,
+          });
+          
+          const aiResult = mlResponse.data;
+          dbCategory = categoryMap[aiResult.category] || aiResult.category;
+          confidence = aiResult.confidence;
+        }
 
         // Google Drive upload with new folder structure
         let driveResult = null;
@@ -728,8 +740,8 @@ app.put("/api/profile/:userId", (req, res) => {
 
     // Also update the users table name, department, and is_regular_faculty so it reflects everywhere
     db.run(
-      `UPDATE users SET name = COALESCE(?, name), department = COALESCE(?, department), is_regular_faculty = COALESCE(?, is_regular_faculty) WHERE id = ?`,
-      [name || null, department || null, is_regular_faculty !== undefined ? is_regular_faculty : null, userId],
+      `UPDATE users SET name = COALESCE(?, name), department = COALESCE(?, department), is_regular_faculty = 1 WHERE id = ?`,
+      [name || null, department || null, userId],
       (err2) => {
         if (err2) console.error("Error syncing users table:", err2.message);
         res.json({ success: true, message: "Profile updated successfully" });

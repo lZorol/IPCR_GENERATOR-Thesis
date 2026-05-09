@@ -187,7 +187,7 @@ const App = () => {
     }
   };
 
-  const handleFileUpload = async (event, year, semester) => {
+  const handleFileUpload = async (event, year, semester, manualCategory = 'auto') => {
     const files = Array.from(event.target.files);
     if (files.length === 0) return;
 
@@ -210,6 +210,7 @@ const App = () => {
       formData.append('year', uploadYear);
       formData.append('semester', uploadSem);
       formData.append('facultyName', user.name || 'Faculty');
+      formData.append('manualCategory', manualCategory); // New field
       if (user.tokens) formData.append('tokens', JSON.stringify(user.tokens));
 
       try {

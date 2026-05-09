@@ -110,13 +110,13 @@ const categoryMap = {
   gradingSheet: "Grading Sheet",
   tos: "TOS",
   attendanceSheet: "Attendance Sheet",
-  classRecord: "Class Record",
+  classRecord: "Class Records",
   evaluationOfTeachingEffectiveness: "Evaluation of Teaching Effectiveness",
   classroomObservation: "Classroom Observation",
   testQuestions: "Test Questions",
   answerKeys: "Answer Keys",
   facultyAndStudentsSeekAdvices: "Faculty and Students Seek Advices",
-  accomplishmentReport: "Accomplishment Report",
+  accomplishmentReport: "Accomplishment Report (Instruction)",
   randdProposal: "R&D Proposal",
   researchImplemented: "Research Implemented",
   researchPresented: "Research Presented",
@@ -140,9 +140,25 @@ const categoryMap = {
   attendaceSpiritualActivities: "Attendance Spiritual Activities"
 };
 
+const AUTOMATED_CATEGORIES = [
+  "Accomplishment Report (Instruction)",
+  "Attendance Sheet",
+  "Class Records",
+  "Classroom Observation",
+  "Course Guide",
+  "Evaluation of Teaching Effectiveness",
+  "Grading Sheet",
+  "Research Implemented",
+  "SLM",
+  "Syllabus",
+  "Test Questions",
+  "TOS"
+];
+
 module.exports = {
   computeCategory,
   calculateOverallRating,
   categoryMap,
-  autoRate
+  autoRate,
+  AUTOMATED_CATEGORIES
 };

@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Upload, FileText, CheckCircle, Clock, Plus, Trash2 } from 'lucide-react';
-import { API_URL } from '../constants';
+import { API_URL, CATEGORY_NAMES } from '../constants';
 
 const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processedFiles, totalFiles, onFileUpload, selectedYear, selectedSemester, onManualSubmitSuccess }) => {
   const [isManualInput, setIsManualInput] = useState(false);
+  const [selectedUploadCategory, setSelectedUploadCategory] = useState('auto');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [history, setHistory] = useState([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [regularFaculty, setRegularFaculty] = useState([]);
-  
+
   const initialFormData = {
     accomplishment_category: 'Seminars, Conferences, and Training',
     title: '',
@@ -110,7 +111,7 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
     if (isManualInput && formData.accomplishment_category === 'Extension' && history.length > 0) {
       const extRecord = history.find(h => h.accomplishment_category === 'Extension');
       if (extRecord) {
-        const parse = (s) => { try { return typeof s === 'string' ? JSON.parse(s) : s; } catch(e) { return null; } };
+        const parse = (s) => { try { return typeof s === 'string' ? JSON.parse(s) : s; } catch (e) { return null; } };
         const r7 = parse(extRecord.active_partnerships_data) || {};
         const r8 = parse(extRecord.trainees_accomplishment_data) || {};
         const r9 = parse(extRecord.extension_programs_data) || {};
@@ -158,7 +159,7 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
   }, [formData.accomplishment_category, history, isManualInput]);
 
   const handleFileChange = (e) => {
-    onFileUpload(e, selectedYear, selectedSemester);
+    onFileUpload(e, selectedYear, selectedSemester, selectedUploadCategory);
   };
 
   const handleManualFileChange = (e) => {
@@ -170,7 +171,7 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
     let finalValue = type === 'checkbox' ? checked : value;
-    
+
     // Prevent negative integers globally for number inputs
     if (type === 'number') {
       if (value === '') {
@@ -180,13 +181,13 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
         finalValue = isNaN(num) ? '' : Math.max(0, num).toString();
       }
     }
-    
+
     setFormData(prev => ({ ...prev, [name]: finalValue }));
   };
 
   const handleManualSubmit = async (e) => {
     e.preventDefault();
-    
+
     const isSeminar = formData.accomplishment_category === 'Seminars, Conferences, and Training';
     const isListOfExtension = formData.accomplishment_category === 'List of Extension';
 
@@ -213,7 +214,7 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
           if (key === 'hours' && !val) val = '0';
           if (key === 'sponsoredBy' && !val) val = 'N/A';
         }
-        
+
         if (isListOfExtension) {
           if (key === 'date') val = formData.is_multiple_days ? `${formData.date} - ${formData.end_date}` : formData.date;
           if (key === 'venue') val = formData.location;
@@ -226,33 +227,33 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
         submitData.append('beneficiaries', `${formData.beneficiaries_count} ${formData.beneficiaries_type}`);
         submitData.append('extension_personnel', JSON.stringify(extensionists));
         if (formData.references) {
-           submitData.append('gdrive_link', formData.references);
+          submitData.append('gdrive_link', formData.references);
         }
       }
 
       if (formData.accomplishment_category === 'Extension') {
         const r7 = {
-            tq1: formData.ext_row7_tq1, aq1: formData.ext_row7_aq1,
-            tq2: formData.ext_row7_tq2, aq2: formData.ext_row7_aq2,
-            tq3: formData.ext_row7_tq3, aq3: formData.ext_row7_aq3,
-            tq4: formData.ext_row7_tq4, aq4: formData.ext_row7_aq4
+          tq1: formData.ext_row7_tq1, aq1: formData.ext_row7_aq1,
+          tq2: formData.ext_row7_tq2, aq2: formData.ext_row7_aq2,
+          tq3: formData.ext_row7_tq3, aq3: formData.ext_row7_aq3,
+          tq4: formData.ext_row7_tq4, aq4: formData.ext_row7_aq4
         };
         const r8 = {
-            aq1: formData.ext_row8_aq1, aq2: formData.ext_row8_aq2,
-            aq3: formData.ext_row8_aq3, aq4: formData.ext_row8_aq4
+          aq1: formData.ext_row8_aq1, aq2: formData.ext_row8_aq2,
+          aq3: formData.ext_row8_aq3, aq4: formData.ext_row8_aq4
         };
         const r9 = {
-            tq1: formData.ext_row9_tq1, aq1: formData.ext_row9_aq1,
-            tq2: formData.ext_row9_tq2, aq2: formData.ext_row9_aq2,
-            tq3: formData.ext_row9_tq3, aq3: formData.ext_row9_aq3,
-            tq4: formData.ext_row9_tq4, aq4: formData.ext_row9_aq4
+          tq1: formData.ext_row9_tq1, aq1: formData.ext_row9_aq1,
+          tq2: formData.ext_row9_tq2, aq2: formData.ext_row9_aq2,
+          tq3: formData.ext_row9_tq3, aq3: formData.ext_row9_aq3,
+          tq4: formData.ext_row9_tq4, aq4: formData.ext_row9_aq4
         };
         submitData.append('totalExtensionTarget', formData.ext_total_target);
         submitData.append('active_partnerships_data', JSON.stringify(r7));
         submitData.append('trainees_accomplishment_data', JSON.stringify(r8));
         submitData.append('extension_programs_data', JSON.stringify(r9));
         submitData.append('extension_individual_data', JSON.stringify(individualExtData));
-        
+
         if (!formData.title) submitData.set('title', `Extension Data ${selectedYear}`);
         if (!formData.date) submitData.set('date', new Date().toISOString().split('T')[0]);
         if (!formData.venue) submitData.set('venue', 'Santa Cruz Campus');
@@ -269,7 +270,7 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
         method: 'POST',
         body: submitData
       });
-      
+
       const data = await res.json();
       if (data.success) {
         alert('✅ Manual accomplishment saved successfully!');
@@ -301,30 +302,28 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
         </div>
       </div>
 
-      {user?.is_regular_faculty !== 0 && (
-        <div className="flex justify-center -mt-6">
-          <div className="bg-gray-100 p-1 rounded-xl inline-flex shadow-inner">
-            <button 
-              onClick={() => setIsManualInput(false)}
-              className={`px-6 py-2 text-sm font-medium rounded-lg transition-all ${!isManualInput ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
-            >
-              Automatic Upload
-            </button>
-            <button 
-              onClick={() => setIsManualInput(true)}
-              className={`px-6 py-2 text-sm font-medium rounded-lg transition-all ${isManualInput ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
-            >
-              Manual Input
-            </button>
-          </div>
+      <div className="flex justify-center -mt-6">
+        <div className="bg-gray-100 p-1 rounded-xl inline-flex shadow-inner">
+          <button
+            onClick={() => setIsManualInput(false)}
+            className={`px-6 py-2 text-sm font-medium rounded-lg transition-all ${!isManualInput ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            Automatic Upload
+          </button>
+          <button
+            onClick={() => setIsManualInput(true)}
+            className={`px-6 py-2 text-sm font-medium rounded-lg transition-all ${isManualInput ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            Manual Input
+          </button>
         </div>
-      )}
+      </div>
 
-      {(isManualInput && user?.is_regular_faculty !== 0) ? (
+      {isManualInput ? (
         <div className="space-y-8">
           <form onSubmit={handleManualSubmit} className="space-y-5 max-w-2xl mx-auto bg-white p-8 rounded-2xl border border-gray-200 shadow-sm">
             <h3 className="text-base font-medium text-gray-900 border-b border-gray-100 pb-3">Faculty Accomplishment Details</h3>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div className="col-span-1 md:col-span-2">
                 <label className="block text-xs font-medium text-gray-500 mb-1.5 tracking-wide">Accomplishment Category *</label>
@@ -342,7 +341,7 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
                     <label className="block text-xs font-medium text-gray-500 mb-1.5 tracking-wide">Title *</label>
                     <input required type="text" name="title" value={formData.title} onChange={handleInputChange} className="w-full rounded-lg border-gray-300 shadow-sm focus:border-gray-400 focus:ring-gray-400 sm:text-sm p-2.5 border" placeholder="Enter title..." />
                   </div>
-                  
+
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1.5 tracking-wide">Date *</label>
                     <input required type="date" max={new Date().toISOString().split('T')[0]} name="date" value={formData.date} onChange={handleInputChange} className="w-full rounded-lg border-gray-300 shadow-sm focus:border-gray-400 focus:ring-gray-400 sm:text-sm p-2.5 border" />
@@ -392,16 +391,16 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
                 <>
                   <div className="col-span-1 md:col-span-2 p-5 bg-gray-50 rounded-2xl border border-gray-200">
                     <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-                       <FileText className="w-4 h-4" /> Global Extension Targets (Sheet 6)
+                      <FileText className="w-4 h-4" /> Global Extension Targets (Sheet 6)
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-xs font-medium text-gray-500 mb-1.5 tracking-wide uppercase">Extension Target</label>
-                        <input 
-                          type="number" 
-                          name="ext_total_target" 
-                          value={formData.ext_total_target} 
-                          onChange={handleInputChange} 
+                        <input
+                          type="number"
+                          name="ext_total_target"
+                          value={formData.ext_total_target}
+                          onChange={handleInputChange}
                           disabled={user?.role !== 'admin'}
                           className={`w-full rounded-lg border-gray-200 shadow-sm focus:border-gray-400 focus:ring-gray-400 sm:text-sm p-2.5 border ${user?.role !== 'admin' ? 'bg-gray-100 cursor-not-allowed' : 'bg-white'}`}
                           min="0"
@@ -480,7 +479,7 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
 
                   <div className="col-span-1 md:col-span-2 pt-6 border-t border-gray-100 mt-4">
                     <h4 className="text-xs font-bold text-gray-700 mb-4 uppercase tracking-widest flex items-center gap-2">
-                       <Clock className="w-4 h-4" /> Individual Faculty Grid
+                      <Clock className="w-4 h-4" /> Individual Faculty Grid
                     </h4>
                     <div className="overflow-x-auto">
                       <table className="min-w-full text-xs border-collapse border border-gray-200 rounded-lg overflow-hidden">
@@ -499,27 +498,27 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
                               <td className="border p-2 font-medium">{f.name}</td>
                               {['q1', 'q2', 'q3', 'q4'].map(q => (
                                 <td key={q} className="border p-1 text-center">
-                                  <input 
-                                    type="number" 
+                                  <input
+                                    type="number"
                                     step="0.1"
                                     min="0"
                                     disabled={user.role !== 'admin' && String(user.id) !== String(f.id)}
-                                    value={individualExtData[f.id]?.[q] || '0'} 
+                                    value={individualExtData[f.id]?.[q] || '0'}
                                     onChange={(e) => {
                                       const rawVal = e.target.value;
                                       let val = '0';
                                       if (rawVal !== '') {
-                                          const num = parseFloat(rawVal);
-                                          val = isNaN(num) ? '0' : Math.max(0, num).toString();
+                                        const num = parseFloat(rawVal);
+                                        val = isNaN(num) ? '0' : Math.max(0, num).toString();
                                       } else {
-                                          val = '';
+                                        val = '';
                                       }
                                       setIndividualExtData(prev => ({
                                         ...prev,
                                         [f.id]: { ...(prev[f.id] || { q1: '0', q2: '0', q3: '0', q4: '0' }), [q]: val }
                                       }));
-                                    }} 
-                                    className={`w-14 p-1 border rounded text-center ${(user.role !== 'admin' && String(user.id) !== String(f.id)) ? 'bg-gray-100 cursor-not-allowed' : 'bg-white'}`} 
+                                    }}
+                                    className={`w-14 p-1 border rounded text-center ${(user.role !== 'admin' && String(user.id) !== String(f.id)) ? 'bg-gray-100 cursor-not-allowed' : 'bg-white'}`}
                                   />
                                 </td>
                               ))}
@@ -595,41 +594,41 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1.5 tracking-wide">Scopus</label>
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
                       min="0"
-                      name="admin_scopus" 
-                      value={formData.admin_scopus} 
-                      onChange={handleInputChange} 
+                      name="admin_scopus"
+                      value={formData.admin_scopus}
+                      onChange={handleInputChange}
                       disabled={user?.role !== 'admin'}
-                      className={`w-full rounded-lg border-gray-200 shadow-sm focus:border-gray-400 focus:ring-gray-400 sm:text-sm p-2.5 border ${user?.role !== 'admin' ? 'bg-gray-100 cursor-not-allowed' : 'bg-white'}`} 
-                      placeholder="0" 
+                      className={`w-full rounded-lg border-gray-200 shadow-sm focus:border-gray-400 focus:ring-gray-400 sm:text-sm p-2.5 border ${user?.role !== 'admin' ? 'bg-gray-100 cursor-not-allowed' : 'bg-white'}`}
+                      placeholder="0"
                     />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1.5 tracking-wide">ResearchGate (RG)</label>
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
                       min="0"
-                      name="admin_rg" 
-                      value={formData.admin_rg} 
-                      onChange={handleInputChange} 
+                      name="admin_rg"
+                      value={formData.admin_rg}
+                      onChange={handleInputChange}
                       disabled={user?.role !== 'admin'}
-                      className={`w-full rounded-lg border-gray-200 shadow-sm focus:border-gray-400 focus:ring-gray-400 sm:text-sm p-2.5 border ${user?.role !== 'admin' ? 'bg-gray-100 cursor-not-allowed' : 'bg-white'}`} 
-                      placeholder="0" 
+                      className={`w-full rounded-lg border-gray-200 shadow-sm focus:border-gray-400 focus:ring-gray-400 sm:text-sm p-2.5 border ${user?.role !== 'admin' ? 'bg-gray-100 cursor-not-allowed' : 'bg-white'}`}
+                      placeholder="0"
                     />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1.5 tracking-wide">Google Scholar (GS)</label>
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
                       min="0"
-                      name="admin_gs" 
-                      value={formData.admin_gs} 
-                      onChange={handleInputChange} 
+                      name="admin_gs"
+                      value={formData.admin_gs}
+                      onChange={handleInputChange}
                       disabled={user?.role !== 'admin'}
-                      className={`w-full rounded-lg border-gray-200 shadow-sm focus:border-gray-400 focus:ring-gray-400 sm:text-sm p-2.5 border ${user?.role !== 'admin' ? 'bg-gray-100 cursor-not-allowed' : 'bg-white'}`} 
-                      placeholder="0" 
+                      className={`w-full rounded-lg border-gray-200 shadow-sm focus:border-gray-400 focus:ring-gray-400 sm:text-sm p-2.5 border ${user?.role !== 'admin' ? 'bg-gray-100 cursor-not-allowed' : 'bg-white'}`}
+                      placeholder="0"
                     />
                   </div>
                 </>
@@ -683,7 +682,7 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
                     <label className="block text-xs font-medium text-gray-500 mb-1.5 tracking-wide">References (GDrive Link)</label>
                     <input type="text" name="references" value={formData.references} onChange={handleInputChange} className="w-full rounded-lg border-gray-300 shadow-sm focus:border-gray-400 focus:ring-gray-400 sm:text-sm p-2.5 border" placeholder="Optional link..." />
                   </div>
-                  
+
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1.5 tracking-wide">Evaluation Score *</label>
                     <input required type="number" step="0.1" min="0" max="5" name="evaluation" value={formData.evaluation} onChange={handleInputChange} className="w-full rounded-lg border-gray-300 shadow-sm focus:border-gray-400 focus:ring-gray-400 sm:text-sm p-2.5 border" placeholder="e.g. 4.5" />
@@ -702,19 +701,19 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
                       {extensionists.map((group) => (
                         <div key={group.id} className="p-4 bg-gray-50/50 border border-gray-200 rounded-xl shadow-sm">
                           <div className="flex justify-between gap-3 mb-3">
-                            <input 
-                              type="text" 
+                            <input
+                              type="text"
                               required
-                              value={group.role} 
-                              onChange={(e) => updateRoleName(group.id, e.target.value)} 
-                              placeholder="Role Name (e.g. Project Head)" 
-                              className="w-full font-medium text-gray-900 rounded-lg border-gray-300 shadow-sm focus:border-gray-400 focus:ring-gray-400 sm:text-sm p-2 border" 
+                              value={group.role}
+                              onChange={(e) => updateRoleName(group.id, e.target.value)}
+                              placeholder="Role Name (e.g. Project Head)"
+                              className="w-full font-medium text-gray-900 rounded-lg border-gray-300 shadow-sm focus:border-gray-400 focus:ring-gray-400 sm:text-sm p-2 border"
                             />
                             <button type="button" onClick={() => removeRoleGroup(group.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors">
                               <Trash2 className="w-4 h-4" />
                             </button>
                           </div>
-                          
+
                           <div className="space-y-2 pl-2 border-l-2 border-gray-200 ml-1">
                             {group.members.map((member, mIdx) => (
                               <div key={mIdx} className="flex gap-2 items-center">
@@ -740,13 +739,13 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
                                     ))}
                                   </select>
                                 ) : (
-                                  <input 
-                                    type="text" 
+                                  <input
+                                    type="text"
                                     required
-                                    value={member.name} 
-                                    onChange={(e) => updateMember(group.id, mIdx, 'name', e.target.value)} 
-                                    placeholder="Person's Name" 
-                                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-gray-400 focus:ring-gray-400 sm:text-sm p-1.5 border" 
+                                    value={member.name}
+                                    onChange={(e) => updateMember(group.id, mIdx, 'name', e.target.value)}
+                                    placeholder="Person's Name"
+                                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-gray-400 focus:ring-gray-400 sm:text-sm p-1.5 border"
                                   />
                                 )}
                                 {group.members.length > 1 && (
@@ -774,7 +773,7 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
                 </div>
               )}
             </div>
-            
+
             <div className="pt-4 flex justify-end">
               <button type="submit" disabled={isSubmitting} className={`px-6 py-2.5 rounded-lg text-sm font-medium text-white transition-all inline-flex items-center gap-2 ${isSubmitting ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-black'}`}>
                 {isSubmitting ? (
@@ -830,9 +829,27 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
               <Upload className="w-10 h-10 text-gray-400 mx-auto mb-4 group-hover:text-blue-500 transition-colors duration-300" strokeWidth={1.5} />
               <h3 className="text-base font-medium text-gray-900">Select IPCR PDF Files</h3>
               <p className="text-sm text-gray-500 mt-2 max-w-sm mx-auto leading-relaxed">
-                Files will be automatically categorized using AI
-                {user.tokens && ' and uploaded to your connected Google Drive.'}
+                Files will be categorized using AI if set to Auto-Detect, or manually assigned to your chosen category.
               </p>
+              {/* Manual Input for IPCR*/}
+              {/*<div className="mt-6 max-w-xs mx-auto">
+                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Categorization Mode</label>
+                <select
+                  value={selectedUploadCategory}
+                  onChange={(e) => setSelectedUploadCategory(e.target.value)}
+                  disabled={isUploading}
+                  className="w-full rounded-xl border-gray-200 bg-white text-sm font-medium text-gray-700 shadow-sm focus:border-blue-400 focus:ring-blue-400 p-2.5 transition-all"
+                >
+                  
+                  <option value="auto">✨ Auto-Detect (AI Classifier)</option>
+                  <optgroup label="Manual Categories (Bypass AI)">
+                    {Object.entries(CATEGORY_NAMES).map(([key, name]) => (
+                      <option key={key} value={key}>{name}</option>
+                    ))}
+                  </optgroup>
+                </select>
+              </div>*/}
+
               <div className="mt-8">
                 <label className="inline-block relative">
                   <input
@@ -843,11 +860,10 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
                     className="hidden"
                     disabled={isUploading}
                   />
-                  <span className={`px-6 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer inline-flex items-center gap-2 ${
-                    isUploading 
-                      ? 'bg-gray-100 text-gray-400 pointer-events-none' 
-                      : 'bg-gray-900 text-white hover:bg-black'
-                  }`}>
+                  <span className={`px-6 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer inline-flex items-center gap-2 ${isUploading
+                    ? 'bg-gray-100 text-gray-400 pointer-events-none'
+                    : 'bg-gray-900 text-white hover:bg-black'
+                    }`}>
                     {isUploading ? (
                       <>
                         <div className="w-4 h-4 rounded-full border-2 border-gray-300 border-t-gray-500 animate-spin" />
@@ -861,8 +877,8 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
               {isUploading && (
                 <div className="mt-6 w-full max-w-sm mx-auto">
                   <div className="bg-gray-200 rounded-full h-2.5 overflow-hidden border border-gray-300">
-                    <div 
-                      className="bg-gray-600 h-2.5 rounded-full transition-all duration-300 ease-out" 
+                    <div
+                      className="bg-gray-600 h-2.5 rounded-full transition-all duration-300 ease-out"
                       style={{ width: `${uploadProgress}%` }}
                     ></div>
                   </div>

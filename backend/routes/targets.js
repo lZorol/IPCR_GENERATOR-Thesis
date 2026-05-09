@@ -124,17 +124,38 @@ router.post('/targets/save', (req, res) => {
   db.run(sql, [userId, academic_year, semester, ...values], function (err) {
     if (err) return res.status(500).json({ error: err.message });
     
-    // SYNC: Overwrite old targets in ipcr_records without erasing accomplished counts
-    Object.entries(targets).forEach(([key, value]) => {
+    // SYNC: Overwrite targets in ipcr_records. 
+    // If a category is NOT automated, also update the manual accomplishment count.
+    const { accomplishments } = req.body;
+    const { AUTOMATED_CATEGORIES } = require('../ipcrCalculator');
+
+    Object.entries(targets).forEach(([key, targetValue]) => {
       const category = categoryMap[key];
       if (category) {
-        db.run(
-          `INSERT INTO ipcr_records (user_id, category, target, accomplished, academic_year, semester)
-           VALUES (?, ?, ?, 0, ?, ?)
-           ON CONFLICT(user_id, category, academic_year, semester) 
-           DO UPDATE SET target = excluded.target`,
-          [userId, category, value, academic_year, semester]
-        );
+        const isAutomated = AUTOMATED_CATEGORIES.includes(category);
+        const manualAcc = accomplishments && accomplishments[key] !== undefined ? accomplishments[key] : 0;
+
+        if (isAutomated) {
+          // Automated: Update target ONLY. Accomplished is handled by document uploads.
+          db.run(
+            `INSERT INTO ipcr_records (user_id, category, target, accomplished, academic_year, semester)
+             VALUES (?, ?, ?, 0, ?, ?)
+             ON CONFLICT(user_id, category, academic_year, semester) 
+             DO UPDATE SET target = excluded.target`,
+            [userId, category, targetValue, academic_year, semester]
+          );
+        } else {
+          // Manual: Update both Target AND Accomplished
+          db.run(
+            `INSERT INTO ipcr_records (user_id, category, target, accomplished, academic_year, semester)
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT(user_id, category, academic_year, semester) 
+             DO UPDATE SET 
+               target = excluded.target,
+               accomplished = excluded.accomplished`,
+            [userId, category, targetValue, manualAcc, academic_year, semester]
+          );
+        }
       }
     });
 
