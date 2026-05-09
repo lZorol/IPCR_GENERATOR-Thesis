@@ -4,6 +4,14 @@ const fs = require("fs");
 const db = require("../database");
 const { computeCategory } = require("../ipcrCalculator");
 
+function getQuarter(dateString) {
+  const month = new Date(dateString).getMonth(); // 0-11
+  if (month <= 2) return '1';
+  if (month <= 5) return '2';
+  if (month <= 8) return '3';
+  return '4';
+}
+
 const TEMPLATE_PATH = path.resolve(__dirname, "Template.xlsx");
 
 /**
@@ -502,8 +510,41 @@ async function exportManualAccomplishmentsToExcel(academicYear, semester) {
       ['A18', 'C18', 'E18', 'G18'].forEach(cell => ws6.getCell(cell).value = assistantProfTarget);
       ['A19', 'C19', 'E19', 'G19'].forEach(cell => ws6.getCell(cell).value = associateProfTarget);
 
-      // Dynamic Faculty Grid
-      const facultyData = parseJSON(extRecord.extension_individual_data);
+      // Dynamic Faculty Grid (Aggregated across all Extension projects)
+      const aggregatedFacultyData = {};
+      
+      // Filter for 'List of Extension' records in the current period
+      const currentPeriodExtensionProjects = records.filter(r => r.accomplishment_category === 'List of Extension');
+      
+      currentPeriodExtensionProjects.forEach(project => {
+        const projectData = parseJSON(project.extension_individual_data);
+        const beneficiariesStr = (project.beneficiaries || "0").split(' ')[0];
+        const totalBeneficiaries = parseInt(beneficiariesStr) || 0;
+        
+        // Extract regular faculty IDs from personnel JSON
+        let personnel = [];
+        try { personnel = JSON.parse(project.extension_personnel); } catch(e) {}
+        
+        const regularFacultyIds = [];
+        personnel.forEach(group => {
+          if (group.members) {
+            group.members.forEach(member => {
+              if (member.userId) regularFacultyIds.push(member.userId);
+            });
+          }
+        });
+
+        const share = regularFacultyIds.length > 0 ? Number((totalBeneficiaries / regularFacultyIds.length).toFixed(2)) : 0;
+        const qKey = `q${getQuarter(project.date)}`;
+
+        regularFacultyIds.forEach(fid => {
+          if (!aggregatedFacultyData[fid]) aggregatedFacultyData[fid] = { q1: 0, q2: 0, q3: 0, q4: 0 };
+          // Use stored share if available in JSON, otherwise fallback to live calculation
+          const storedShare = projectData[fid]?.[qKey];
+          aggregatedFacultyData[fid][qKey] += (storedShare != null ? storedShare : share);
+        });
+      });
+
       let currentRow = 25;
 
       const facultyProfiles = await new Promise((resolve) => {
@@ -518,27 +559,34 @@ async function exportManualAccomplishmentsToExcel(academicYear, semester) {
         if (rank.includes('Assistant')) targetValue = assistantProfTarget;
         else if (rank.includes('Associate')) targetValue = associateProfTarget;
 
-        const acc = facultyData[faculty.id] || { q1: 0, q2: 0, q3: 0, q4: 0 };
+        const acc = aggregatedFacultyData[faculty.id] || { q1: 0, q2: 0, q3: 0, q4: 0 };
 
         const row = ws6.getRow(currentRow);
         row.getCell(1).value = faculty.name;
         row.getCell(2).value = rank;
         row.getCell(3).value = targetValue;
         row.getCell(4).value = Number(acc.q1 || 0);
+        row.getCell(4).numFmt = '0.00';
         row.getCell(5).value = targetValue;
         row.getCell(6).value = Number(acc.q2 || 0);
+        row.getCell(6).numFmt = '0.00';
         row.getCell(7).value = targetValue * 2;
         row.getCell(8).value = Number(acc.q1 || 0) + Number(acc.q2 || 0);
+        row.getCell(8).numFmt = '0.00';
 
         row.getCell(10).value = targetValue;
         row.getCell(11).value = Number(acc.q3 || 0);
+        row.getCell(11).numFmt = '0.00';
         row.getCell(12).value = targetValue;
         row.getCell(13).value = Number(acc.q4 || 0);
+        row.getCell(13).numFmt = '0.00';
         row.getCell(14).value = targetValue * 2;
         row.getCell(15).value = Number(acc.q3 || 0) + Number(acc.q4 || 0);
+        row.getCell(15).numFmt = '0.00';
 
         row.getCell(17).value = targetValue * 4;
         row.getCell(18).value = Number(acc.q1 || 0) + Number(acc.q2 || 0) + Number(acc.q3 || 0) + Number(acc.q4 || 0);
+        row.getCell(18).numFmt = '0.00';
         currentRow++;
       });
 

@@ -42,6 +42,7 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
     { id: Date.now(), role: 'Project Head', members: [{ name: '', isRegularFaculty: false, userId: null }] }
   ]);
   const [individualExtData, setIndividualExtData] = useState({}); // { userId: { q1, q2, q3, q4 } }
+  const [userExtensions, setUserExtensions] = useState([]);
 
   const addRoleGroup = () => {
     setExtensionists([...extensionists, { id: Date.now(), role: '', members: [{ name: '', isRegularFaculty: false, userId: null }] }]);
@@ -96,6 +97,43 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
         .finally(() => setIsLoadingHistory(false));
     }
   };
+
+  useEffect(() => {
+    if (user?.id && formData.accomplishment_category === 'Extension') {
+      fetch(`${API_URL}/accomplishments/extension/${user.id}?year=${selectedYear}&semester=${selectedSemester}`)
+        .then(res => res.json())
+        .then(data => setUserExtensions(Array.isArray(data) ? data : []))
+        .catch(err => console.error(err));
+    }
+  }, [user, selectedYear, selectedSemester, formData.accomplishment_category]);
+
+  const getQuarter = (dateString) => {
+    const month = new Date(dateString).getMonth();
+    if (month <= 2) return 'q1';
+    if (month <= 5) return 'q2';
+    if (month <= 8) return 'q3';
+    return 'q4';
+  };
+
+  useEffect(() => {
+    if (userExtensions.length > 0 && user?.id) {
+      const totals = userExtensions.reduce((acc, ext) => {
+        const q = getQuarter(ext.date);
+        acc[q] += (ext.userBeneficiaryShare || 0);
+        return acc;
+      }, { q1: 0, q2: 0, q3: 0, q4: 0 });
+
+      setIndividualExtData(prev => ({
+        ...prev,
+        [user.id]: {
+          q1: totals.q1.toFixed(2),
+          q2: totals.q2.toFixed(2),
+          q3: totals.q3.toFixed(2),
+          q4: totals.q4.toFixed(2)
+        }
+      }));
+    }
+  }, [userExtensions, user?.id]);
 
   useEffect(() => {
     if (isManualInput) {
@@ -502,7 +540,8 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
                                     type="number"
                                     step="0.1"
                                     min="0"
-                                    disabled={user.role !== 'admin' && String(user.id) !== String(f.id)}
+                                    disabled={String(user.id) !== String(f.id)}
+                                    readOnly={String(user.id) !== String(f.id)}
                                     value={individualExtData[f.id]?.[q] || '0'}
                                     onChange={(e) => {
                                       const rawVal = e.target.value;
@@ -518,7 +557,7 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
                                         [f.id]: { ...(prev[f.id] || { q1: '0', q2: '0', q3: '0', q4: '0' }), [q]: val }
                                       }));
                                     }}
-                                    className={`w-14 p-1 border rounded text-center ${(user.role !== 'admin' && String(user.id) !== String(f.id)) ? 'bg-gray-100 cursor-not-allowed' : 'bg-white'}`}
+                                    className={`w-14 p-1 border rounded text-center ${String(user.id) !== String(f.id) ? 'bg-gray-200 cursor-not-allowed opacity-70' : 'bg-white'}`}
                                   />
                                 </td>
                               ))}
@@ -527,6 +566,36 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
                         </tbody>
                       </table>
                     </div>
+
+                    {userExtensions.length > 0 && (
+                      <div className="mt-8">
+                        <h4 className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-3 flex items-center gap-2">
+                          <CheckCircle className="w-3.5 h-3.5" /> Participating Extension Projects (Automatic Share)
+                        </h4>
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full text-[10px] border-collapse border border-blue-100 rounded-lg overflow-hidden bg-blue-50/10">
+                            <thead className="bg-blue-50">
+                              <tr>
+                                <th className="border border-blue-100 p-2 text-left">Project Title</th>
+                                <th className="border border-blue-100 p-2 text-center">Date</th>
+                                <th className="border border-blue-100 p-2 text-center">Total Beneficiaries</th>
+                                <th className="border border-blue-100 p-2 text-center">Your Share (Accomplished)</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {userExtensions.map(ext => (
+                                <tr key={ext.id} className="hover:bg-white transition-colors">
+                                  <td className="border border-blue-100 p-2 font-medium">{ext.title}</td>
+                                  <td className="border border-blue-100 p-2 text-center">{new Date(ext.date).toLocaleDateString()}</td>
+                                  <td className="border border-blue-100 p-2 text-center font-bold text-gray-400">{ext.beneficiaries}</td>
+                                  <td className="border border-blue-100 p-2 text-center font-bold text-blue-700">{ext.userBeneficiaryShare}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </>
               )}
@@ -804,6 +873,14 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
                           <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{item.accomplishment_category || 'General'}</span>
                           <span className="text-gray-300 text-xs">•</span>
                           <span className="text-xs text-gray-500">{new Date(item.date).toLocaleDateString()}</span>
+                          {item.userBeneficiaryShare !== undefined && (
+                            <>
+                              <span className="text-gray-300 text-xs">•</span>
+                              <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+                                {item.userBeneficiaryShare.toFixed(2)} Beneficiaries
+                              </span>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>

@@ -298,7 +298,7 @@ app.post("/api/ipcr/targets", async (req, res) => {
 
 app.get("/api/users/regular", (req, res) => {
   db.all(
-    `SELECT id, name FROM users WHERE role = 'professor' ORDER BY name ASC`,
+    `SELECT id, name FROM users WHERE is_regular_faculty = 1 OR role = 'admin' ORDER BY name ASC`,
     [],
     (err, rows) => {
       if (err) return res.status(500).json({ error: err.message });
@@ -306,6 +306,11 @@ app.get("/api/users/regular", (req, res) => {
     }
   );
 });
+
+const getQuarter = (dateString) => {
+  const month = new Date(dateString).getMonth() + 1; // 1-12
+  return Math.ceil(month / 3); // Returns 1, 2, 3, or 4
+};
 
 app.post("/api/accomplishments/manual", upload.single("file"), async (req, res) => {
   try {
@@ -397,21 +402,88 @@ app.post("/api/accomplishments/manual", upload.single("file"), async (req, res) 
         }
 
         // Update IPCR record count for Training/Seminar/Conference Certificate
-        const category = "Training/Seminar/Conference Certificate";
+        if (accomplishment_category === 'Seminars, Conferences, and Training' || !accomplishment_category) {
+          const category = "Training/Seminar/Conference Certificate";
 
-        const row = await new Promise((resolve, reject) =>
-          db.get(
-            `SELECT target, accomplished FROM ipcr_records
-             WHERE user_id = ? AND category = ? AND academic_year = ? AND semester = ?`,
-            [userId, category, academicYear, semester],
-            (err, r) => (err ? reject(err) : resolve(r))
-          )
-        );
+          const row = await new Promise((resolve, reject) =>
+            db.get(
+              `SELECT target, accomplished FROM ipcr_records
+               WHERE user_id = ? AND category = ? AND academic_year = ? AND semester = ?`,
+              [userId, category, academicYear, semester],
+              (err, r) => (err ? reject(err) : resolve(r))
+            )
+          );
 
-        const target = row?.target || 5; // Default 5
-        const accomplished = (row?.accomplished || 0) + 1;
+          const target = row?.target || 5; 
+          const accomplished = (row?.accomplished || 0) + 1;
 
-        await saveIPCR(userId, category, accomplished, target, academicYear, semester);
+          await saveIPCR(userId, category, accomplished, target, academicYear, semester);
+        }
+
+        // --- 🟢 AUTOMATED EXTENSION DISTRIBUTION ENGINE 🟢 ---
+        if (accomplishment_category === 'List of Extension') {
+          try {
+            console.log("🚀 Starting Extension Distribution Engine...");
+            
+            // 1. Extract total beneficiaries (numeric)
+            const totalBeneficiaries = parseInt(beneficiaries) || 0;
+            
+            // 2. Extract and Filter Participating Regular Faculty
+            let personnel = [];
+            try {
+              personnel = typeof extension_personnel === 'string' ? JSON.parse(extension_personnel) : extension_personnel;
+            } catch (e) { personnel = []; }
+
+            const regularFacultyIds = [];
+            personnel.forEach(group => {
+              if (group.members) {
+                group.members.forEach(member => {
+                  if (member.userId) regularFacultyIds.push(member.userId);
+                });
+              }
+            });
+
+            if (regularFacultyIds.length > 0 && totalBeneficiaries > 0) {
+              const splitAmount = Number((totalBeneficiaries / regularFacultyIds.length).toFixed(2));
+              const quarterNum = getQuarter(date);
+              const qKey = `q${quarterNum}`; // q1, q2, q3, q4
+
+              console.log(`📊 Distributing ${totalBeneficiaries} beneficiaries to ${regularFacultyIds.length} faculty members. Split: ${splitAmount}. Quarter: ${qKey}`);
+
+              // 3. Update Project-Level Individual Data (for Sheet 6 Export)
+              const individualData = {};
+              regularFacultyIds.forEach(id => {
+                individualData[id] = { [qKey]: splitAmount };
+              });
+
+              db.run(
+                `UPDATE faculty_accomplishments SET extension_individual_data = ? WHERE id = ?`,
+                [JSON.stringify(individualData), this.lastID]
+              );
+
+              // 4. Update Each Faculty's Personal IPCR Records
+              for (const facultyId of regularFacultyIds) {
+                // Update the overall 'Persons Trained' category in ipcr_records
+                const ipcrCat = "Persons Trained";
+                
+                const existing = await new Promise(resolve => {
+                  db.get(
+                    `SELECT accomplished FROM ipcr_records WHERE user_id = ? AND category = ? AND academic_year = ? AND semester = ?`,
+                    [facultyId, ipcrCat, academicYear, semester],
+                    (err, row) => resolve(row)
+                  );
+                });
+
+                const newAcc = (existing?.accomplished || 0) + splitAmount;
+                await saveIPCR(facultyId, ipcrCat, newAcc, null, academicYear, semester);
+                
+                console.log(`✅ Updated IPCR for User ${facultyId}: +${splitAmount} to ${ipcrCat}`);
+              }
+            }
+          } catch (distErr) {
+            console.error("❌ Extension Distribution Error:", distErr);
+          }
+        }
 
         res.json({ success: true });
       }
@@ -441,7 +513,68 @@ app.get("/api/accomplishments/history/:userId", async (req, res) => {
     [userId, academicYear, semester],
     (err, rows) => {
       if (err) return res.status(500).json({ error: err.message });
-      res.json(rows);
+
+      const processedRows = (rows || []).map(item => {
+        if (item.accomplishment_category === 'List of Extension') {
+          const beneficiariesStr = (item.beneficiaries || "0").split(' ')[0];
+          const totalBeneficiaries = parseInt(beneficiariesStr) || 0;
+          
+          let personnel = [];
+          try { personnel = JSON.parse(item.extension_personnel); } catch(e) {}
+          
+          const regularFacultyCount = personnel.reduce((acc, group) => {
+            return acc + (group.members?.filter(m => m.userId).length || 0);
+          }, 0) || 1;
+
+          item.userBeneficiaryShare = Number((totalBeneficiaries / regularFacultyCount).toFixed(2));
+        }
+        return item;
+      });
+
+      res.json(processedRows);
+    }
+  );
+});
+
+/**
+ * Fetch individual extension projects for a specific user (Faculty Accomplishment Grid)
+ */
+app.get("/api/accomplishments/extension/:userId", async (req, res) => {
+  const userId = req.params.userId;
+  const active = await getActiveConfig();
+  const academicYear = req.query.year || active.academic_year;
+  const semester = req.query.semester || active.semester;
+
+  db.all(
+    `SELECT * FROM faculty_accomplishments 
+     WHERE accomplishment_category = 'List of Extension' 
+     AND academic_year = ? AND semester = ?`,
+    [academicYear, semester],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      
+      const processedExtensions = (rows || []).filter(ext => {
+        let personnel = [];
+        try { personnel = JSON.parse(ext.extension_personnel); } catch(e) {}
+        return personnel.some(group => 
+          group.members?.some(m => String(m.userId) === String(userId))
+        );
+      }).map(ext => {
+        const beneficiariesStr = (ext.beneficiaries || "0").split(' ')[0];
+        const totalBen = parseInt(beneficiariesStr) || 0;
+        
+        let personnel = [];
+        try { personnel = JSON.parse(ext.extension_personnel); } catch(e) {}
+        
+        const regFac = personnel.reduce((acc, group) => {
+          return acc + (group.members?.filter(m => m.userId).length || 0);
+        }, 0) || 1;
+
+        const share = Number((totalBen / regFac).toFixed(2));
+        return { ...ext, userBeneficiaryShare: share };
+      });
+      
+      res.json(processedExtensions);
     }
   );
 });
