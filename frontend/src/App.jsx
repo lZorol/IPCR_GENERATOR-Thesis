@@ -201,34 +201,36 @@ const App = () => {
 
     let driveUploadedCount = 0;
     let successfulUploads = 0;
+    let finishedCount = 0;
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+    // Parallelize uploads using Promise.all
+    await Promise.all(files.map(async (file) => {
       const formData = new FormData();
       formData.append('files', file);
       formData.append('userId', user.id);
       formData.append('year', uploadYear);
       formData.append('semester', uploadSem);
       formData.append('facultyName', user.name || 'Faculty');
-      formData.append('manualCategory', manualCategory); // New field
+      formData.append('manualCategory', manualCategory);
       if (user.tokens) formData.append('tokens', JSON.stringify(user.tokens));
 
       try {
         const res = await fetch(`${API_URL}/documents/upload`, { method: 'POST', body: formData });
         const data = await res.json();
         if (data.success) {
-           successfulUploads += data.results.length;
-           driveUploadedCount += data.results.filter(r => r.driveUploaded).length;
+          successfulUploads += data.results.length;
+          driveUploadedCount += data.results.filter(r => r.driveUploaded).length;
         } else {
-           console.error('Upload failed for file:', file.name, data.error);
+          console.error('Upload failed for file:', file.name, data.error);
         }
       } catch (error) {
         console.error('Upload error for file', file.name, error);
       }
 
-      setProcessedFiles(i + 1);
-      setUploadProgress(Math.round(((i + 1) / files.length) * 100));
-    }
+      finishedCount++;
+      setProcessedFiles(finishedCount);
+      setUploadProgress(Math.round((finishedCount / files.length) * 100));
+    }));
 
     setIsUploading(false);
 

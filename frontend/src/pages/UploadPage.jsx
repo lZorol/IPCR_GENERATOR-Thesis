@@ -906,9 +906,9 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
               <Upload className="w-10 h-10 text-gray-400 mx-auto mb-4 group-hover:text-blue-500 transition-colors duration-300" strokeWidth={1.5} />
               <h3 className="text-base font-medium text-gray-900">Select IPCR PDF Files</h3>
               <p className="text-sm text-gray-500 mt-2 max-w-sm mx-auto leading-relaxed">
-                Files will be categorized using AI if set to Auto-Detect, or manually assigned to your chosen category.
+                Files will be categorized using AI.
               </p>
-              {/* Manual Input for IPCR*/}
+              {/* Manual Input for IPCR "if set to Auto-Detect, or manually assigned to your chosen category"*/}
               {/*<div className="mt-6 max-w-xs mx-auto">
                 <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Categorization Mode</label>
                 <select
