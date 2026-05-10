@@ -19,13 +19,10 @@ const DashboardPage = ({
   const [viewMode, setViewMode] = useState("category");
 
   const calculateRating = (target, accomplished) => {
-    if (target === 0) return 0;
-    const ratio = accomplished / target;
-    if (ratio >= 1.0) return 5;
-    if (ratio >= 0.8) return 4;
-    if (ratio >= 0.6) return 3;
-    if (ratio >= 0.4) return 2;
-    return 1;
+    if (target === 0) return 1;
+    const rawRating = (accomplished / target) * 5;
+    const finalRating = Math.max(1, Math.min(5, rawRating));
+    return parseFloat(finalRating.toFixed(2));
   };
 
   // ✅ Helpers
@@ -49,6 +46,7 @@ const DashboardPage = ({
         "syllabus",
         "courseGuide",
         "slm",
+        "communityImmersion",
         "attendanceSheet",
         "classRecord",
         "evaluationOfTeachingEffectiveness",
@@ -154,8 +152,10 @@ const DashboardPage = ({
         <div className="space-y-4 mt-auto border-t border-gray-50 pt-4">
           <div className="flex items-center justify-between text-xs">
             <span className="text-gray-600 font-medium">
-              <span className="text-gray-900">{data.accomplished}</span>{" "}
-              <span className="text-gray-300 mx-1">/</span> {data.target} target
+              <span className="text-gray-900">
+                {typeof data.accomplished === 'number' ? data.accomplished.toFixed(2) : data.accomplished}
+              </span>{" "}
+              <span className="text-gray-300 mx-1">/</span> {Math.round(data.target)} target
             </span>
             {data.submitted && (
               <span className="text-gray-400 flex items-center gap-1 bg-gray-50 px-2 py-0.5 rounded-full">
@@ -184,7 +184,52 @@ const DashboardPage = ({
   }
 
   let displayContent;
-  if (viewMode === "category") {
+  if (viewMode === "table") {
+    displayContent = (
+      <>
+        <div className="overflow-x-auto bg-white rounded-2xl border border-gray-200 shadow-sm">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50/50">
+                <th className="py-4 px-6 text-xs font-semibold text-gray-900 uppercase tracking-wider">Strategic Objective / Output</th>
+                <th className="py-4 px-4 text-xs font-semibold text-gray-900 uppercase tracking-wider text-center">Target</th>
+                <th className="py-4 px-4 text-xs font-semibold text-gray-900 uppercase tracking-wider text-center">Acc</th>
+                <th className="py-4 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-center">Qnty</th>
+                <th className="py-4 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-center">Ql/E</th>
+                <th className="py-4 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider text-center">T</th>
+                <th className="py-4 px-4 text-xs font-semibold text-gray-900 uppercase tracking-wider text-center">A</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {items.map((item) => (
+                <tr key={item.key} className="hover:bg-gray-50/80 transition-colors">
+                  <td className="py-4 px-6">
+                    <div className="text-sm font-medium text-gray-900">{item.name}</div>
+                  </td>
+                  <td className="py-4 px-4 text-center text-sm text-gray-600">{Math.round(item.data.target)}</td>
+                  <td className="py-4 px-4 text-center text-sm text-gray-900 font-medium">
+                    {typeof item.data.accomplished === 'number' ? item.data.accomplished.toFixed(2) : item.data.accomplished}
+                  </td>
+                  <td className="py-4 px-4 text-center text-sm text-gray-500">{(item.data.qty || item.rating).toFixed(2)}</td>
+                  <td className="py-4 px-4 text-center text-sm text-gray-500">{(item.data.qle || item.rating).toFixed(2)}</td>
+                  <td className="py-4 px-4 text-center text-sm text-gray-500">{(item.data.timeliness || item.rating).toFixed(2)}</td>
+                  <td className="py-4 px-4 text-center">
+                    <span className={`text-sm font-bold px-2 py-1 rounded-md ${
+                      item.rating >= 4 ? "bg-green-50 text-green-700" :
+                      item.rating >= 3 ? "bg-amber-50 text-amber-700" :
+                      "bg-red-50 text-red-700"
+                    }`}>
+                      {item.rating.toFixed(2)}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </>
+    );
+  } else if (viewMode === "category") {
     displayContent = Object.entries(CATEGORY_GROUPS).map(
       ([groupKey, itemKeys]) => {
         const groupItems = items.filter((i) => itemKeys.includes(i.key));
@@ -297,6 +342,7 @@ const DashboardPage = ({
             className="bg-transparent font-medium text-gray-900 border-none outline-none cursor-pointer p-0"
           >
             <option value="category">Category Groups</option>
+            <option value="table">Table Detailed View</option>
             <option value="alpha">Alphabetical (A-Z)</option>
             <option value="desc">Accomplished (Highest First)</option>
             <option value="asc">Accomplished (Lowest First)</option>

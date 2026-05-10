@@ -16,6 +16,7 @@ const presetsRoutes = require("./routes/presets");
 const academicYearsRoutes = require("./routes/academicYears");
 const GoogleDriveService = require("./utils/googleDrive");
 const { saveIPCR } = require("./saveIPCR");
+const { categoryMap, autoRate } = require("./ipcrCalculator");
 const initializeAcademicYears = require("./utils/initializeAcademicYears");
 const detectSchoolYear = require("./utils/detectSchoolYear");
 const createSchoolYearIfMissing = require("./utils/createSchoolYearIfMissing");
@@ -39,47 +40,7 @@ app.use("/api", academicYearsRoutes);
 // Health check
 app.get("/api/health", (req, res) => res.json({ status: "ok", timestamp: new Date() }));
 
-// ──────────────────────────────────────────────────────────────────────────────
-// CATEGORY MAP
-// ──────────────────────────────────────────────────────────────────────────────
-const categoryMap = {
-  syllabus: "Syllabus",
-  courseGuide: "Course Guide",
-  slm: "SLM",
-  gradingSheet: "Grading Sheet",
-  tos: "TOS",
-  attendanceSheet: "Attendance Sheet",
-  classRecord: "Class Record",
-  evaluationOfTeachingEffectiveness: "Evaluation of Teaching Effectiveness",
-  classroomObservation: "Classroom Observation",
-  testQuestions: "Test Questions",
-  answerKeys: "Answer Keys",
-  facultyAndStudentsSeekAdvices: "Faculty and Students Seek Advices",
-  accomplishmentReport: "Accomplishment Report",
-  randdProposal: "R&D Proposal",
-  researchImplemented: "Research Implemented",
-  researchPresented: "Research Presented",
-  researchPublished: "Research Published",
-  intellectualPropertyRights: "Intellectual Property Rights",
-  researchUtilizedDeveloped: "Research Utilized/Developed",
-  numberOfCitations: "Number of Citations",
-  extentionProposal: "Extension Proposal",
-  personsTrained: "Persons Trained",
-  personServiceRating: "Person Service Rating",
-  personGivenTraining: "Person Given Training",
-  technicalAdvice: "Technical Advice",
-  accomplishmentReportSupport: "Accomplishment Report Support",
-  attendanceFlagCeremony: "Attendance Flag Ceremony",
-  attendanceFlagLowering: "Attendance Flag Lowering",
-  attendanceHealthAndWellnessProgram: "Attendance Health and Wellness Program",
-  attendanceSchoolCelebrations: "Attendance School Celebrations",
-  trainingSeminarConferenceCertificate: "Training/Seminar/Conference Certificate",
-  atttendanceFacultyMeeting: "Attendance Faculty Meeting",
-  attendanceISOAndRelatedActivities: "Attendance ISO and Related Activities",
-  attendaceSpiritualActivities: "Attendance Spiritual Activities"
-
-};
-
+// CATEGORY MAP moved to ipcrCalculator.js
 // ──────────────────────────────────────────────────────────────────────────────
 // HELPER: resolve active semester config from DB
 // ──────────────────────────────────────────────────────────────────────────────
@@ -245,18 +206,62 @@ app.get("/api/ipcr/:userId", async (req, res) => {
         if (!byCategory[key] || hasRating) byCategory[key] = row;
       }
     });
+
     Object.entries(byCategory).forEach(([key, row]) => {
-      // Keep user target; only update accomplished/submitted/rating from records
+      // DYNAMIC CALCULATION: Compute Q, E, T, A on the fly
+      const target = ipcrData[key].target > 0 ? ipcrData[key].target : 5;
+      const accomplished = row.accomplished;
+      
+      const baseRating = autoRate(accomplished, target);
+      const qty = baseRating;
+      const qle = baseRating;
+      const timeliness = baseRating;
+      const average = (qty + qle + timeliness) / 3;
+
       ipcrData[key] = {
-        target: ipcrData[key].target,
-        accomplished: row.accomplished,
+        target,
+        accomplished,
         submitted: row.submission_date,
-        rating: row.rating != null ? Number(row.rating) : null,
+        rating: Number(average.toFixed(2)),
+        qty: Number(qty.toFixed(2)),
+        qle: Number(qle.toFixed(2)),
+        timeliness: Number(timeliness.toFixed(2)),
+        average: Number(average.toFixed(2)),
         hasTargets,
       };
     });
 
-    res.json(ipcrData);
+    // 4. Ensure all master categories have a rating (min 1.0)
+    const masterKeys = Object.keys(categoryMap);
+    masterKeys.forEach(key => {
+      if (ipcrData[key].rating === undefined) {
+        const target = ipcrData[key].target > 0 ? ipcrData[key].target : 5;
+        const rating = autoRate(0, target);
+        ipcrData[key] = {
+          ...ipcrData[key],
+          rating,
+          qty: rating,
+          qle: rating,
+          timeliness: rating,
+          average: rating
+        };
+      }
+    });
+
+    // 5. Final Aggregation (Strict All-Category Inclusion)
+    let totalCategoryRatings = 0;
+    masterKeys.forEach(key => {
+      totalCategoryRatings += ipcrData[key].rating;
+    });
+
+    const overallRating = masterKeys.length > 0 
+      ? Number((totalCategoryRatings / masterKeys.length).toFixed(2)) 
+      : 1.0;
+
+    res.json({
+      ratings: ipcrData,
+      overall_rating: overallRating
+    });
   } catch (err) {
     console.error('GET /api/ipcr/:userId error:', err);
     res.status(500).json({ error: err.message });
@@ -293,7 +298,7 @@ app.post("/api/ipcr/targets", async (req, res) => {
 
 app.get("/api/users/regular", (req, res) => {
   db.all(
-    `SELECT id, name FROM users WHERE is_regular_faculty = 1 ORDER BY name ASC`,
+    `SELECT id, name FROM users WHERE is_regular_faculty = 1 OR role = 'admin' ORDER BY name ASC`,
     [],
     (err, rows) => {
       if (err) return res.status(500).json({ error: err.message });
@@ -301,6 +306,11 @@ app.get("/api/users/regular", (req, res) => {
     }
   );
 });
+
+const getQuarter = (dateString) => {
+  const month = new Date(dateString).getMonth() + 1; // 1-12
+  return Math.ceil(month / 3); // Returns 1, 2, 3, or 4
+};
 
 app.post("/api/accomplishments/manual", upload.single("file"), async (req, res) => {
   try {
@@ -392,21 +402,88 @@ app.post("/api/accomplishments/manual", upload.single("file"), async (req, res) 
         }
 
         // Update IPCR record count for Training/Seminar/Conference Certificate
-        const category = "Training/Seminar/Conference Certificate";
+        if (accomplishment_category === 'Seminars, Conferences, and Training' || !accomplishment_category) {
+          const category = "Training/Seminar/Conference Certificate";
 
-        const row = await new Promise((resolve, reject) =>
-          db.get(
-            `SELECT target, accomplished FROM ipcr_records
-             WHERE user_id = ? AND category = ? AND academic_year = ? AND semester = ?`,
-            [userId, category, academicYear, semester],
-            (err, r) => (err ? reject(err) : resolve(r))
-          )
-        );
+          const row = await new Promise((resolve, reject) =>
+            db.get(
+              `SELECT target, accomplished FROM ipcr_records
+               WHERE user_id = ? AND category = ? AND academic_year = ? AND semester = ?`,
+              [userId, category, academicYear, semester],
+              (err, r) => (err ? reject(err) : resolve(r))
+            )
+          );
 
-        const target = row?.target || 5; // Default 5
-        const accomplished = (row?.accomplished || 0) + 1;
+          const target = row?.target || 5; 
+          const accomplished = (row?.accomplished || 0) + 1;
 
-        await saveIPCR(userId, category, accomplished, target, academicYear, semester);
+          await saveIPCR(userId, category, accomplished, target, academicYear, semester);
+        }
+
+        // --- 🟢 AUTOMATED EXTENSION DISTRIBUTION ENGINE 🟢 ---
+        if (accomplishment_category === 'List of Extension') {
+          try {
+            console.log("🚀 Starting Extension Distribution Engine...");
+            
+            // 1. Extract total beneficiaries (numeric)
+            const totalBeneficiaries = parseInt(beneficiaries) || 0;
+            
+            // 2. Extract and Filter Participating Regular Faculty
+            let personnel = [];
+            try {
+              personnel = typeof extension_personnel === 'string' ? JSON.parse(extension_personnel) : extension_personnel;
+            } catch (e) { personnel = []; }
+
+            const regularFacultyIds = [];
+            personnel.forEach(group => {
+              if (group.members) {
+                group.members.forEach(member => {
+                  if (member.userId) regularFacultyIds.push(member.userId);
+                });
+              }
+            });
+
+            if (regularFacultyIds.length > 0 && totalBeneficiaries > 0) {
+              const splitAmount = Number((totalBeneficiaries / regularFacultyIds.length).toFixed(2));
+              const quarterNum = getQuarter(date);
+              const qKey = `q${quarterNum}`; // q1, q2, q3, q4
+
+              console.log(`📊 Distributing ${totalBeneficiaries} beneficiaries to ${regularFacultyIds.length} faculty members. Split: ${splitAmount}. Quarter: ${qKey}`);
+
+              // 3. Update Project-Level Individual Data (for Sheet 6 Export)
+              const individualData = {};
+              regularFacultyIds.forEach(id => {
+                individualData[id] = { [qKey]: splitAmount };
+              });
+
+              db.run(
+                `UPDATE faculty_accomplishments SET extension_individual_data = ? WHERE id = ?`,
+                [JSON.stringify(individualData), this.lastID]
+              );
+
+              // 4. Update Each Faculty's Personal IPCR Records
+              for (const facultyId of regularFacultyIds) {
+                // Update the overall 'Persons Trained' category in ipcr_records
+                const ipcrCat = "Persons Trained";
+                
+                const existing = await new Promise(resolve => {
+                  db.get(
+                    `SELECT accomplished FROM ipcr_records WHERE user_id = ? AND category = ? AND academic_year = ? AND semester = ?`,
+                    [facultyId, ipcrCat, academicYear, semester],
+                    (err, row) => resolve(row)
+                  );
+                });
+
+                const newAcc = (existing?.accomplished || 0) + splitAmount;
+                await saveIPCR(facultyId, ipcrCat, newAcc, null, academicYear, semester);
+                
+                console.log(`✅ Updated IPCR for User ${facultyId}: +${splitAmount} to ${ipcrCat}`);
+              }
+            }
+          } catch (distErr) {
+            console.error("❌ Extension Distribution Error:", distErr);
+          }
+        }
 
         res.json({ success: true });
       }
@@ -436,7 +513,68 @@ app.get("/api/accomplishments/history/:userId", async (req, res) => {
     [userId, academicYear, semester],
     (err, rows) => {
       if (err) return res.status(500).json({ error: err.message });
-      res.json(rows);
+
+      const processedRows = (rows || []).map(item => {
+        if (item.accomplishment_category === 'List of Extension') {
+          const beneficiariesStr = (item.beneficiaries || "0").split(' ')[0];
+          const totalBeneficiaries = parseInt(beneficiariesStr) || 0;
+          
+          let personnel = [];
+          try { personnel = JSON.parse(item.extension_personnel); } catch(e) {}
+          
+          const regularFacultyCount = personnel.reduce((acc, group) => {
+            return acc + (group.members?.filter(m => m.userId).length || 0);
+          }, 0) || 1;
+
+          item.userBeneficiaryShare = Number((totalBeneficiaries / regularFacultyCount).toFixed(2));
+        }
+        return item;
+      });
+
+      res.json(processedRows);
+    }
+  );
+});
+
+/**
+ * Fetch individual extension projects for a specific user (Faculty Accomplishment Grid)
+ */
+app.get("/api/accomplishments/extension/:userId", async (req, res) => {
+  const userId = req.params.userId;
+  const active = await getActiveConfig();
+  const academicYear = req.query.year || active.academic_year;
+  const semester = req.query.semester || active.semester;
+
+  db.all(
+    `SELECT * FROM faculty_accomplishments 
+     WHERE accomplishment_category = 'List of Extension' 
+     AND academic_year = ? AND semester = ?`,
+    [academicYear, semester],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      
+      const processedExtensions = (rows || []).filter(ext => {
+        let personnel = [];
+        try { personnel = JSON.parse(ext.extension_personnel); } catch(e) {}
+        return personnel.some(group => 
+          group.members?.some(m => String(m.userId) === String(userId))
+        );
+      }).map(ext => {
+        const beneficiariesStr = (ext.beneficiaries || "0").split(' ')[0];
+        const totalBen = parseInt(beneficiariesStr) || 0;
+        
+        let personnel = [];
+        try { personnel = JSON.parse(ext.extension_personnel); } catch(e) {}
+        
+        const regFac = personnel.reduce((acc, group) => {
+          return acc + (group.members?.filter(m => m.userId).length || 0);
+        }, 0) || 1;
+
+        const share = Number((totalBen / regFac).toFixed(2));
+        return { ...ext, userBeneficiaryShare: share };
+      });
+      
+      res.json(processedExtensions);
     }
   );
 });
@@ -470,19 +608,35 @@ app.post("/api/documents/upload", upload.array("files"), async (req, res) => {
       try {
         console.log(`Processing file: ${file.originalname}`);
 
-        // ML classification
-        const formData = new FormData();
-        formData.append("file", fs.createReadStream(file.path), {
-          filename: file.originalname,
-          contentType: "application/pdf",
-        });
+        const manualCategory = req.body.manualCategory || 'auto';
+        let dbCategory, confidence;
 
-        const mlResponse = await axios.post("http://localhost:5000/classify", formData, {
-          headers: formData.getHeaders(),
-          timeout: 60000,
-        });
-        const { category, confidence } = mlResponse.data;
-        const dbCategory = categoryMap[category] || category;
+        if (manualCategory !== 'auto') {
+          // USER BYPASS: Use manual category instead of AI
+          dbCategory = categoryMap[manualCategory] || manualCategory;
+          confidence = 1.0;
+          console.log(`👤 Manual Category selected: ${dbCategory}. Bypassing AI.`);
+        } else {
+          // AI CLASSIFICATION
+          const formData = new FormData();
+          formData.append("file", fs.createReadStream(file.path), {
+            filename: file.originalname,
+            contentType: "application/pdf",
+          });
+
+          // Hard fix: Explicitly use Port 5050 to bypass Windows port 5000 conflicts
+          const mlEndpoint = "http://127.0.0.1:5050/classify";
+          console.log(`🤖 Requesting AI classification at: ${mlEndpoint}`);
+
+          const mlResponse = await axios.post(mlEndpoint, formData, {
+            headers: formData.getHeaders(),
+            timeout: 30000,
+          });
+          
+          const aiResult = mlResponse.data;
+          dbCategory = categoryMap[aiResult.category] || aiResult.category;
+          confidence = aiResult.confidence;
+        }
 
         // Google Drive upload with new folder structure
         let driveResult = null;
@@ -517,19 +671,19 @@ app.post("/api/documents/upload", upload.array("files"), async (req, res) => {
         );
 
         // Update IPCR record (scoped to year + semester)
-        const row = await new Promise((resolve, reject) =>
+        // Hard Fix: We no longer fetch the target here to avoid passing a default '5' 
+        // that overwrites custom settings. We let saveIPCR handle target resolution.
+        const ipcrRecord = await new Promise((resolve) =>
           db.get(
-            `SELECT target, accomplished FROM ipcr_records
+            `SELECT accomplished FROM ipcr_records
              WHERE user_id = ? AND category = ? AND academic_year = ? AND semester = ?`,
             [userId, dbCategory, academicYear, semester],
-            (err, r) => (err ? reject(err) : resolve(r))
+            (err, r) => resolve(r)
           )
         );
 
-        const target = row?.target || 0;
-        const accomplished = (row?.accomplished || 0) + 1;
-
-        await saveIPCR(userId, dbCategory, accomplished, target, academicYear, semester);
+        const newAccomplished = (ipcrRecord?.accomplished || 0) + 1;
+        await saveIPCR(userId, dbCategory, newAccomplished, null, academicYear, semester);
 
         // Store the category-specific folder link on this category's ipcr_record row
         if (driveResult && driveResult.categoryFolderLinks) {
@@ -719,8 +873,8 @@ app.put("/api/profile/:userId", (req, res) => {
 
     // Also update the users table name, department, and is_regular_faculty so it reflects everywhere
     db.run(
-      `UPDATE users SET name = COALESCE(?, name), department = COALESCE(?, department), is_regular_faculty = COALESCE(?, is_regular_faculty) WHERE id = ?`,
-      [name || null, department || null, is_regular_faculty !== undefined ? is_regular_faculty : null, userId],
+      `UPDATE users SET name = COALESCE(?, name), department = COALESCE(?, department), is_regular_faculty = 1 WHERE id = ?`,
+      [name || null, department || null, userId],
       (err2) => {
         if (err2) console.error("Error syncing users table:", err2.message);
         res.json({ success: true, message: "Profile updated successfully" });
@@ -753,7 +907,7 @@ app.get("/api/admin/ipcr", async (req, res) => {
       WHERE u.role = 'professor'
       GROUP BY u.id
     `;
-    
+
     const usersRows = await new Promise((resolve, reject) => {
       db.all(query, [academicYear, semester], (err, rows) => {
         if (err) reject(err);
@@ -813,17 +967,50 @@ app.get("/api/admin/ipcr", async (req, res) => {
         }
       });
       Object.entries(byCategory).forEach(([key, row]) => {
+        const target = ipcrData[key].target > 0 ? ipcrData[key].target : 5;
+        const rating = autoRate(row.accomplished, target);
         ipcrData[key] = {
-          target: ipcrData[key].target,
+          target,
           accomplished: row.accomplished,
           submitted: row.submission_date,
-          rating: row.rating != null ? Number(row.rating) : null,
+          qty: rating,
+          qle: rating,
+          timeliness: rating,
+          rating: rating,
           hasTargets,
         };
       });
 
+      // Ensure all categories have a rating (min 1.0)
+      Object.keys(ipcrData).forEach(key => {
+        if (ipcrData[key].rating === undefined) {
+          const target = ipcrData[key].target > 0 ? ipcrData[key].target : 5;
+          const rating = autoRate(0, target);
+          ipcrData[key] = {
+            ...ipcrData[key],
+            rating,
+            qty: rating,
+            qle: rating,
+            timeliness: rating
+          };
+        }
+      });
+
+      // Compute Overall Rating for the Admin Summary (Strict All-Category Inclusion)
+      const masterKeys = Object.keys(categoryMap);
+      let totalCategoryRatings = 0;
+
+      masterKeys.forEach(key => {
+        totalCategoryRatings += ipcrData[key].rating;
+      });
+
+      const overallRating = masterKeys.length > 0 
+        ? Number((totalCategoryRatings / masterKeys.length).toFixed(2))
+        : 1.0;
+
       return {
         ...user,
+        overall_rating: overallRating,
         ipcrData
       };
     }));

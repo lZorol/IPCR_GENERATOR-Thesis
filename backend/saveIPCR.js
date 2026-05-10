@@ -15,6 +15,7 @@ const categoryMap = {
   syllabus: "Syllabus",
   courseGuide: "Course Guide",
   slm: "SLM",
+  communityImmersion: "Number of subject areas with community immersion/involvement component",
   gradingSheet: "Grading Sheet",
   tos: "TOS",
   testQuestions: "Test Questions",
@@ -30,6 +31,7 @@ const categoryKeyMap = {
   Syllabus: "syllabus",
   "Course Guide": "courseGuide",
   SLM: "slm",
+  "Number of subject areas with community immersion/involvement component": "communityImmersion",
   "Grading Sheet": "gradingSheet",
   TOS: "tos",
   "Test Questions": "testQuestions",
@@ -61,87 +63,76 @@ function getSemesterDates(academicYear, semester) {
 }
 
 /**
- * Save a single category record (UPDATE existing row or INSERT new one).
- * @param {string|number} userId
- * @param {string}        category     - ML key or DB display name
- * @param {number}        accomplished
- * @param {number}        target
- * @param {string}        [academicYear]  - e.g. "2025-2026"
- * @param {string}        [semester]      - e.g. "1st Semester"
+ * Save a single category record (UPSERT: Insert or Update).
+ * If target is null, it resolves the correct target from the database (ipcr_records or user_targets).
  */
-async function saveIPCR(userId, category, accomplished, target = 0, academicYear, semester) {
+async function saveIPCR(userId, category, accomplished, target = null, academicYear, semester) {
   const uid = parseInt(userId, 10) || userId;
   const dbCategory = categoryMap[category] || category;
   const computeKey = categoryKeyMap[dbCategory] || category;
   const year = academicYear || DEFAULT_ACADEMIC_YEAR;
-  const sem  = semester    || DEFAULT_SEMESTER;
+  const sem = semester || DEFAULT_SEMESTER;
 
-  const numericTarget  = Number(target);
-  const targetOverride = numericTarget > 0 ? numericTarget : undefined;
+  // 1. RESOLVE TARGET
+  let finalTarget = target;
+  if (finalTarget === null) {
+    // Check if there's already an IPCR record with a target
+    const existing = await new Promise((resolve) => {
+      db.get(
+        `SELECT target FROM ipcr_records WHERE user_id = ? AND category = ? AND academic_year = ? AND semester = ?`,
+        [uid, dbCategory, year, sem],
+        (err, row) => resolve(row)
+      );
+    });
 
-  const result = computeCategory(computeKey, accomplished, targetOverride);
+    if (existing?.target != null) {
+      finalTarget = existing.target;
+    } else {
+      // Pull from user_targets
+      const userTargetRow = await new Promise((resolve) => {
+        db.get(
+          `SELECT * FROM user_targets WHERE user_id = ? AND academic_year = ? AND semester = ?`,
+          [uid, year, sem],
+          (err, row) => resolve(row)
+        );
+      });
+      // Convert camelCase key to snake_case column
+      const dbColumnName = computeKey.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+      finalTarget = userTargetRow?.[dbColumnName] ?? 5;
+    }
+  }
 
-  // Fetch semester dates from config
+  const result = computeCategory(computeKey, accomplished, finalTarget);
   const { start_date, end_date } = await getSemesterDates(year, sem);
-
   const rating = Number(result.rating);
-  const updateParams = [
-    result.target,
-    result.accomplished,
-    result.Q,
-    result.E,
-    result.T,
-    rating,
-    start_date,
-    end_date,
-    uid,
-    dbCategory,
-    year,
-    sem,
-  ];
 
   return new Promise((resolve, reject) => {
-    // 1) Try to update an existing row for this year/semester
-    const updateSql = `
-      UPDATE ipcr_records
-      SET target = ?, accomplished = ?, q_score = ?, e_score = ?, t_score = ?, rating = ?,
-          submission_date = DATE('now'), start_date = COALESCE(?, start_date), end_date = COALESCE(?, end_date)
-      WHERE user_id = ? AND category = ? AND academic_year = ? AND semester = ?
+    // 2. UPSERT Logic: Strictly exclude 'target' from the DO UPDATE clause
+    const sql = `
+      INSERT INTO ipcr_records 
+      (user_id, category, academic_year, semester, target, accomplished, q_score, e_score, t_score, rating, submission_date, start_date, end_date)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, DATE('now'), ?, ?)
+      ON CONFLICT(user_id, category, academic_year, semester) DO UPDATE SET
+        accomplished = excluded.accomplished,
+        q_score = excluded.q_score,
+        e_score = excluded.e_score,
+        t_score = excluded.t_score,
+        rating = excluded.rating,
+        submission_date = excluded.submission_date,
+        start_date = COALESCE(excluded.start_date, start_date),
+        end_date = COALESCE(excluded.end_date, end_date)
     `;
-    db.run(updateSql, updateParams, function (err) {
+
+    const params = [
+      uid, dbCategory, year, sem, 
+      result.target, result.accomplished, 
+      result.Q, result.E, result.T, rating, 
+      start_date, end_date
+    ];
+
+    db.run(sql, params, (err) => {
       if (err) return reject(err);
-      if (this.changes > 0) return resolve({ success: true, data: result });
-
-      // 2) Try to backfill legacy rows (NULL year/semester)
-      const legacySql = `
-        UPDATE ipcr_records
-        SET target = ?, accomplished = ?, q_score = ?, e_score = ?, t_score = ?, rating = ?,
-            submission_date = DATE('now'), academic_year = ?, semester = ?,
-            start_date = COALESCE(?, start_date), end_date = COALESCE(?, end_date)
-        WHERE user_id = ? AND category = ?
-          AND (academic_year IS NULL OR academic_year = '')
-          AND (semester IS NULL OR semester = '')
-      `;
-      db.run(
-        legacySql,
-        [result.target, result.accomplished, result.Q, result.E, result.T, rating, year, sem, start_date, end_date, uid, dbCategory],
-        function (err2) {
-          if (err2) return reject(err2);
-          if (this.changes > 0) return resolve({ success: true, data: result });
-
-          // 3) Insert brand new row (with semester dates)
-          const insertSql = `
-            INSERT INTO ipcr_records
-            (user_id, category, academic_year, semester, target, accomplished, q_score, e_score, t_score, rating, submission_date, start_date, end_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, DATE('now'), ?, ?)
-          `;
-          db.run(
-            insertSql,
-            [uid, dbCategory, year, sem, result.target, result.accomplished, result.Q, result.E, result.T, rating, start_date, end_date],
-            (err3) => (err3 ? reject(err3) : resolve({ success: true, data: result })),
-          );
-        },
-      );
+      resolve({ success: true, data: result });
     });
   });
 }
@@ -158,7 +149,7 @@ async function saveMultipleIPCR(userId, ocrResults, academicYear, semester) {
 
   for (const [category, data] of Object.entries(ocrResults)) {
     const accomplished = Number(data?.accomplished) || 0;
-    const target       = Number(data?.target)       || 0;
+    const target = Number(data?.target) || 0;
 
     const res = await saveIPCR(userId, category, accomplished, target, academicYear, semester);
     results.push(res.data);

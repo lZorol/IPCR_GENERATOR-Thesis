@@ -3,17 +3,18 @@ export const API_URL = 'http://localhost:3001/api';
 export const CATEGORY_NAMES = {
   syllabus:     'Syllabus',
   courseGuide:  'Course Guide',
-  slm:          'Student Learning Materials',
+  slm:          'SLM',
+  communityImmersion: 'Number of subject areas with community immersion/involvement component',
   gradingSheet: 'Grading Sheet',
-  tos:          'Table of Specifications',
+  tos:          'TOS',
   attendanceSheet: 'Attendance Sheet',
-  classRecord: 'Class Record',
+  classRecord: 'Class Records',
   evaluationOfTeachingEffectiveness: 'Evaluation of Teaching Effectiveness',
   classroomObservation: 'Classroom Observation',
   testQuestions: 'Test Questions',
   answerKeys: 'Answer Keys',
   facultyAndStudentsSeekAdvices: 'Faculty and Students Seek Advices',
-  accomplishmentReport: 'Accomplishment Report',
+  accomplishmentReport: 'Accomplishment Report (Instruction)',
   randdProposal: 'R&D Proposal',
   researchImplemented: 'Research Implemented',
   researchPresented: 'Research Presented',
@@ -40,7 +41,7 @@ export const CATEGORY_NAMES = {
 
 export const CATEGORY_GROUPS = {
   instruction: [
-    'syllabus', 'courseGuide', 'slm', 'gradingSheet', 'tos', 'attendanceSheet', 'classRecord',
+    'syllabus', 'courseGuide', 'slm', 'communityImmersion', 'gradingSheet', 'tos', 'attendanceSheet', 'classRecord',
     'evaluationOfTeachingEffectiveness', 'classroomObservation', 'testQuestions', 'answerKeys',
     'facultyAndStudentsSeekAdvices', 'accomplishmentReport'
   ],
@@ -64,3 +65,18 @@ export const GROUP_NAMES = {
   extension: 'Extension',
   supportFunction: 'Support Function'
 };
+
+export const AUTOMATED_CATEGORIES = [
+  "Accomplishment Report (Instruction)",
+  "Attendance Sheet",
+  "Class Records",
+  "Classroom Observation",
+  "Course Guide",
+  "Evaluation of Teaching Effectiveness",
+  "Grading Sheet",
+  "Research Implemented",
+  "SLM",
+  "Syllabus",
+  "Test Questions",
+  "TOS"
+];

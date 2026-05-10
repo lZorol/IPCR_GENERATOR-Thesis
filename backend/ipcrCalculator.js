@@ -16,6 +16,7 @@ const DEFAULT_TARGETS = {
   classroomObservation: DefaultTarget.classroomObservation,
   evaluationOfTeachingEffectiveness: DefaultTarget.evaluationOfTeachingEffectiveness,
   accomplishmentReport: DefaultTarget.accomplishmentReport,
+  communityImmersion: 5,
 };
 
 const WEIGHTS = {
@@ -29,24 +30,24 @@ const WEIGHTS = {
   classRecord: 0.5,
   classroomObservation: 0.5,
   evaluationOfTeachingEffectiveness: 0.5,
-  accomplishmentReport: 0.5
+  accomplishmentReport: 0.5,
+  communityImmersion: 0.5
 };
 
 /**
  * Convert accomplished vs target → IPCR score (1–5)
  */
 function autoRate(accomplished, target) {
-
-  if (!target || target === 0) return 0;
-
-  const ratio = accomplished / target;
-
-  if (ratio >= 1.0) return 5;
-  if (ratio >= 0.8) return 4;
-  if (ratio >= 0.6) return 3;
-  if (ratio >= 0.4) return 2;
-
-  return 1;
+  // Use 5 if target is missing or 0
+  const effectiveTarget = target > 0 ? target : 5;
+  
+  // Calculate raw ratio-based score (1 to 5 scale)
+  const rawRating = (accomplished / effectiveTarget) * 5;
+  
+  // Clamp between 1.00 and 5.00
+  const finalRating = Math.max(1, Math.min(5, rawRating));
+  
+  return parseFloat(finalRating.toFixed(2));
 }
 
 /**
@@ -101,7 +102,63 @@ function calculateOverallRating(rows) {
   return Number(total.toFixed(2));
 }
 
+const categoryMap = {
+  syllabus: "Syllabus",
+  courseGuide: "Course Guide",
+  slm: "SLM",
+  communityImmersion: "Number of subject areas with community immersion/involvement component",
+  gradingSheet: "Grading Sheet",
+  tos: "TOS",
+  attendanceSheet: "Attendance Sheet",
+  classRecord: "Class Records",
+  evaluationOfTeachingEffectiveness: "Evaluation of Teaching Effectiveness",
+  classroomObservation: "Classroom Observation",
+  testQuestions: "Test Questions",
+  answerKeys: "Answer Keys",
+  facultyAndStudentsSeekAdvices: "Faculty and Students Seek Advices",
+  accomplishmentReport: "Accomplishment Report (Instruction)",
+  randdProposal: "R&D Proposal",
+  researchImplemented: "Research Implemented",
+  researchPresented: "Research Presented",
+  researchPublished: "Research Published",
+  intellectualPropertyRights: "Intellectual Property Rights",
+  researchUtilizedDeveloped: "Research Utilized/Developed",
+  numberOfCitations: "Number of Citations",
+  extentionProposal: "Extension Proposal",
+  personsTrained: "Persons Trained",
+  personServiceRating: "Person Service Rating",
+  personGivenTraining: "Person Given Training",
+  technicalAdvice: "Technical Advice",
+  accomplishmentReportSupport: "Accomplishment Report Support",
+  attendanceFlagCeremony: "Attendance Flag Ceremony",
+  attendanceFlagLowering: "Attendance Flag Lowering",
+  attendanceHealthAndWellnessProgram: "Attendance Health and Wellness Program",
+  attendanceSchoolCelebrations: "Attendance School Celebrations",
+  trainingSeminarConferenceCertificate: "Training/Seminar/Conference Certificate",
+  atttendanceFacultyMeeting: "Attendance Faculty Meeting",
+  attendanceISOAndRelatedActivities: "Attendance ISO and Related Activities",
+  attendaceSpiritualActivities: "Attendance Spiritual Activities"
+};
+
+const AUTOMATED_CATEGORIES = [
+  "Accomplishment Report (Instruction)",
+  "Attendance Sheet",
+  "Class Records",
+  "Classroom Observation",
+  "Course Guide",
+  "Evaluation of Teaching Effectiveness",
+  "Grading Sheet",
+  "Research Implemented",
+  "SLM",
+  "Syllabus",
+  "Test Questions",
+  "TOS"
+];
+
 module.exports = {
   computeCategory,
-  calculateOverallRating
+  calculateOverallRating,
+  categoryMap,
+  autoRate,
+  AUTOMATED_CATEGORIES
 };

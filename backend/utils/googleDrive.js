@@ -14,6 +14,7 @@ class GoogleDriveService {
     }
 
     this.drive = google.drive({ version: 'v3', auth: this.oauth2Client });
+    this.folderCache = new Map(); // Simple in-memory cache for folder IDs
   }
 
   /**
@@ -37,6 +38,11 @@ class GoogleDriveService {
    * Find or create a folder by name under an optional parent.
    */
   async findOrCreateFolder(folderName, parentId = null) {
+    const cacheKey = `${folderName}_${parentId || 'root'}`;
+    if (this.folderCache.has(cacheKey)) {
+      return this.folderCache.get(cacheKey);
+    }
+
     try {
       const query = parentId
         ? `name='${folderName}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`
@@ -48,26 +54,29 @@ class GoogleDriveService {
         spaces: 'drive'
       });
 
+      let folder;
       if (response.data.files.length > 0) {
-        return response.data.files[0];
+        folder = response.data.files[0];
+      } else {
+        // Create new folder
+        const fileMetadata = {
+          name: folderName,
+          mimeType: 'application/vnd.google-apps.folder',
+          ...(parentId && { parents: [parentId] })
+        };
+
+        const result = await this.drive.files.create({
+          requestBody: fileMetadata,
+          fields: 'id, name, webViewLink'
+        });
+        folder = result.data;
+
+        // Make newly created folder publicly viewable via link
+        await this.setPublicPermission(folder.id);
       }
 
-      // Create new folder
-      const fileMetadata = {
-        name: folderName,
-        mimeType: 'application/vnd.google-apps.folder',
-        ...(parentId && { parents: [parentId] })
-      };
-
-      const folder = await this.drive.files.create({
-        requestBody: fileMetadata,
-        fields: 'id, name, webViewLink'
-      });
-
-      // Make newly created folder publicly viewable via link
-      await this.setPublicPermission(folder.data.id);
-
-      return folder.data;
+      this.folderCache.set(cacheKey, folder);
+      return folder;
     } catch (error) {
       console.error('Error finding/creating folder:', error);
       throw error;
@@ -98,51 +107,32 @@ class GoogleDriveService {
 
       // Create/find ALL category folders under the faculty folder
       const categories = [
-        'Syllabus', 
-        'Course Guide', 
-        'SLM', 
-        'Grading Sheet', 
-        'TOS',
-        'Attendance Sheet',
-        'Class Record',
-        'Evaluation of Teaching Effectiveness',
-        'Classroom Observation',
-        'Test Questions',
-        'Answer Keys',
-        'Faculty and Students Seek Advices',
-        'Accomplishment Report',  /// END OF INSTRUCTION
-        'R&D Proposal',           /// START OF RESEARCH
-        'Research Implemented',
-        'Research Presented',
-        'Research Published',
-        'Intellectual Property Rights',
-        'Research Utilized/Developed',
-        'Number of Citations',    /// END OF RESEARCH
-        'Extension Proposal',     /// START OF EXTENSION
-        'Persons Trained',
-        'Person Service Rating',
-        'Person Given Training',
-        'Technical Advice',       /// END OF EXTENSION
-        'Accomplishment Report Support', /// START OF SUPPORT FUNCTION
-        'Attendance Flag Ceremony',
-        'Attendance Flag Lowering',
-        'Attendance Health and Wellness Program',
-        'Attendance School Celebrations',
-        'Training/Seminar/Conference Certificate',
-        'Attendance Faculty Meeting',
-        'Attendance ISO and Related Activities',
-        'Attendance Spiritual Activities' /// END OF SUPPORT FUNCTION
+        'Syllabus', 'Course Guide', 'SLM', 'Grading Sheet', 'TOS',
+        'Attendance Sheet', 'Class Record', 'Evaluation of Teaching Effectiveness',
+        'Classroom Observation', 'Test Questions', 'Answer Keys',
+        'Faculty and Students Seek Advices', 'Accomplishment Report',
+        'R&D Proposal', 'Research Implemented', 'Research Presented',
+        'Research Published', 'Intellectual Property Rights',
+        'Research Utilized/Developed', 'Number of Citations',
+        'Extension Proposal', 'Persons Trained', 'Person Service Rating',
+        'Person Given Training', 'Technical Advice',
+        'Accomplishment Report Support', 'Attendance Flag Ceremony',
+        'Attendance Flag Lowering', 'Attendance Health and Wellness Program',
+        'Attendance School Celebrations', 'Training/Seminar/Conference Certificate',
+        'Attendance Faculty Meeting', 'Attendance ISO and Related Activities',
+        'Attendance Spiritual Activities'
       ];
+
       const categoryFolderLinks = {};
 
-      for (const cat of categories) {
+      // PARALLEL FOLDER CREATION (Massive Speed Up)
+      await Promise.all(categories.map(async (cat) => {
         const folder = await this.findOrCreateFolder(cat, facultyFolder.id);
-        const key = cat.replace(/\s+/g, '').toLowerCase(); // e.g. "courseguide"
+        const key = cat.replace(/\s+/g, '').toLowerCase();
         categoryFolderLinks[key] = folder.webViewLink || `https://drive.google.com/drive/folders/${folder.id}`;
-      }
+      }));
 
-      // Find the correct category folder for upload (already created above)
-      const catKey = category.replace(/\s+/g, '').toLowerCase();
+      // Find the specific category folder for this upload
       const targetCatFolder = await this.findOrCreateFolder(category, facultyFolder.id);
 
       // Upload file

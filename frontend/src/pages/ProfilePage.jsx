@@ -182,20 +182,6 @@ const ProfilePage = ({ user }) => {
 
         <div>
           <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1.5">
-            <User className="w-4 h-4 text-gray-400" /> Regular Faculty?
-          </label>
-          <select
-            value={formData.is_regular_faculty}
-            onChange={e => handleChange('is_regular_faculty', parseInt(e.target.value, 10))}
-            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm text-gray-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-          >
-            <option value={1}>Yes</option>
-            <option value={0}>No</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-1.5">
             <FileText className="w-4 h-4 text-gray-400" /> Optional Notes
           </label>
           <textarea

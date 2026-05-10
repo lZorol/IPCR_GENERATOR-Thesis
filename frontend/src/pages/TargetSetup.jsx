@@ -9,11 +9,11 @@ import {
   Target,
   CheckCircle2,
 } from "lucide-react";
-import { API_URL, CATEGORY_NAMES, CATEGORY_GROUPS, GROUP_NAMES } from "../constants";
+import { API_URL, CATEGORY_NAMES, CATEGORY_GROUPS, GROUP_NAMES, AUTOMATED_CATEGORIES } from "../constants";
 
 // ─── Ordered list of all category keys ────────────────────────────────────────
 const ALL_KEYS = [
-  "syllabus","courseGuide","slm","gradingSheet","tos","attendanceSheet",
+  "syllabus","courseGuide","slm","communityImmersion","gradingSheet","tos","attendanceSheet",
   "classRecord","evaluationOfTeachingEffectiveness","classroomObservation",
   "testQuestions","answerKeys","facultyAndStudentsSeekAdvices","accomplishmentReport",
   "randdProposal","researchImplemented","researchPresented","researchPublished",
@@ -43,6 +43,7 @@ const TargetSetup = ({ user, selectedYear, selectedSemester, onTargetsSaved, ava
   const [year, setYear]       = useState(selectedYear);
   const [semester, setSem]    = useState(selectedSemester);
   const [targets, setTargets] = useState(INITIAL_TARGETS());
+  const [accomplishments, setAccomplishments] = useState({});
   const [hasTargets, setHasTargets] = useState(false);
 
   // Presets
@@ -57,14 +58,27 @@ const TargetSetup = ({ user, selectedYear, selectedSemester, onTargetsSaved, ava
   // ── Load targets when year/semester changes ──────────────────────────────────
   const loadTargets = useCallback(async (uid, y, s) => {
     try {
+      // 1. Load Targets
       const res  = await fetch(`${API_URL}/targets/${uid}/${encodeURIComponent(y)}/${encodeURIComponent(s)}`);
       const data = await res.json();
       if (data.targets) {
         setTargets({ ...INITIAL_TARGETS(), ...data.targets });
         setHasTargets(data.hasTargets);
       }
-    } catch {
+
+      // 2. Load Accomplishments (Hybrid)
+      const resIpcr = await fetch(`${API_URL}/ipcr/${uid}?year=${encodeURIComponent(y)}&semester=${encodeURIComponent(s)}`);
+      const dataIpcr = await resIpcr.json();
+      const accs = {};
+      const ratingsSource = dataIpcr.ratings || dataIpcr;
+      Object.entries(ratingsSource).forEach(([k, v]) => {
+        accs[k] = v.accomplished || 0;
+      });
+      setAccomplishments(accs);
+    } catch (err) {
+      console.error("Load targets error:", err);
       setTargets(INITIAL_TARGETS());
+      setAccomplishments({});
     }
   }, []);
 
@@ -100,6 +114,11 @@ const TargetSetup = ({ user, selectedYear, selectedSemester, onTargetsSaved, ava
     setTargets((prev) => ({ ...prev, [key]: isNaN(n) || n < 0 ? 0 : n }));
   };
 
+  const handleAccChange = (key, val) => {
+    const n = parseInt(val, 10);
+    setAccomplishments((prev) => ({ ...prev, [key]: isNaN(n) || n < 0 ? 0 : n }));
+  };
+
   // ── Save targets ─────────────────────────────────────────────────────────────
   const handleSave = async () => {
     setSaving(true);
@@ -112,6 +131,7 @@ const TargetSetup = ({ user, selectedYear, selectedSemester, onTargetsSaved, ava
           academic_year: year,
           semester,
           targets,
+          accomplishments, // Send accomplishments for hybrid save
         }),
       });
       const data = await res.json();
@@ -274,27 +294,38 @@ const TargetSetup = ({ user, selectedYear, selectedSemester, onTargetsSaved, ava
                 {/* Category rows */}
                 {!isCollapsed && (
                   <div className="divide-y divide-gray-50 border-t border-gray-100">
-                    {keys.map((key) => (
-                      <div
-                        key={key}
-                        className="flex items-center justify-between px-5 py-3 hover:bg-gray-50/70 transition-colors"
-                      >
-                        <label
-                          htmlFor={`target-${key}`}
-                          className="text-sm text-gray-700 flex-1 pr-4"
+                    {keys.map((key) => {
+                      const categoryName = CATEGORY_NAMES[key] || key;
+                      const isAutomated = AUTOMATED_CATEGORIES.includes(categoryName);
+                      
+                      return (
+                        <div
+                          key={key}
+                          className="flex items-center justify-between px-5 py-3 hover:bg-gray-50/70 transition-colors"
                         >
-                          {CATEGORY_NAMES[key] || key}
-                        </label>
-                        <input
-                          id={`target-${key}`}
-                          type="number"
-                          min="0"
-                          value={targets[key] ?? 5}
-                          onChange={(e) => handleChange(key, e.target.value)}
-                          className="w-20 text-center text-sm font-semibold text-gray-900 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 outline-none focus:ring-2 focus:ring-gray-300 focus:border-gray-400 transition-all"
-                        />
-                      </div>
-                    ))}
+                          <label
+                            htmlFor={`target-${key}`}
+                            className="text-sm text-gray-700 flex-1 pr-4"
+                          >
+                            {categoryName}
+                          </label>
+                          
+                          <div className="flex items-center gap-6">
+                            <div className="flex flex-col items-center">
+                              <span className="text-[9px] uppercase text-gray-400 font-bold mb-1 tracking-tighter">Target</span>
+                              <input
+                                id={`target-${key}`}
+                                type="number"
+                                min="0"
+                                value={targets[key] ?? 5}
+                                onChange={(e) => handleChange(key, e.target.value)}
+                                className="w-16 text-center text-sm font-semibold text-gray-900 bg-white border border-gray-200 rounded-lg px-1 py-1.5 outline-none focus:ring-2 focus:ring-gray-300 transition-all"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
