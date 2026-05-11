@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Save, CheckCircle, AlertCircle, User, Phone, Building, Briefcase, FileText, Loader2 } from 'lucide-react';
 import { API_URL } from '../constants';
 
-const ProfilePage = ({ user }) => {
+const ProfilePage = ({ user, setUser }) => {
   const [formData, setFormData] = useState({
     name: '',
     department: '',
@@ -76,9 +76,11 @@ const ProfilePage = ({ user }) => {
           savedUser.is_regular_faculty = formData.is_regular_faculty;
           savedUser.name = formData.name;
           savedUser.department = formData.department;
+          savedUser.position = formData.position;
           sessionStorage.setItem('user', JSON.stringify(savedUser));
-          // Mutate the active user prop object to immediately unlock UI views without reload
-          user.is_regular_faculty = formData.is_regular_faculty;
+          
+          // Trigger global state update to refresh UI across all pages
+          if (setUser) setUser(savedUser);
         }
         setTimeout(() => setSaveStatus(null), 4000);
       } else {

@@ -315,6 +315,7 @@ db.serialize(() => {
 
   // Faculty Accomplishment / User role additions
   addColumnIfMissing('users', 'is_regular_faculty', 'INTEGER DEFAULT 1');
+  addColumnIfMissing('users', 'position', 'TEXT');
   addColumnIfMissing('faculty_accomplishments', 'accomplishment_category', 'TEXT');
   addColumnIfMissing('faculty_accomplishments', 'target_presentation', 'INTEGER');
   addColumnIfMissing('faculty_accomplishments', 'target_publication', 'INTEGER');

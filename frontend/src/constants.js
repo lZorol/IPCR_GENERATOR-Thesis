@@ -4,7 +4,7 @@ export const CATEGORY_NAMES = {
   syllabus:     'Syllabus',
   courseGuide:  'Course Guide',
   slm:          'SLM',
-  communityImmersion: 'Number of subject areas with community immersion/involvement component',
+  communityImmersion: 'Community Immersion',
   gradingSheet: 'Grading Sheet',
   tos:          'TOS',
   attendanceSheet: 'Attendance Sheet',

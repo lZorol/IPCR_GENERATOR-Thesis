@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, FileText, CheckCircle, Clock, Plus, Trash2 } from 'lucide-react';
+import { Upload, FileText, CheckCircle, Clock, Plus, Trash2, AlertTriangle, ArrowRight } from 'lucide-react';
 import { API_URL, CATEGORY_NAMES } from '../constants';
 
-const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processedFiles, totalFiles, onFileUpload, selectedYear, selectedSemester, onManualSubmitSuccess }) => {
+const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processedFiles, totalFiles, onFileUpload, selectedYear, selectedSemester, onManualSubmitSuccess, onNavigate }) => {
   const [isManualInput, setIsManualInput] = useState(false);
   const [selectedUploadCategory, setSelectedUploadCategory] = useState('auto');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -108,11 +108,33 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
   }, [user, selectedYear, selectedSemester, formData.accomplishment_category]);
 
   const getQuarter = (dateString) => {
-    const month = new Date(dateString).getMonth();
-    if (month <= 2) return 'q1';
-    if (month <= 5) return 'q2';
-    if (month <= 8) return 'q3';
-    return 'q4';
+    if (!dateString) return 'q1';
+    
+    // Extract first date if it's a range
+    const cleanDate = dateString.includes(' - ') ? dateString.split(' - ')[0] : dateString;
+    
+    let dateObj = new Date(cleanDate);
+    
+    // Fallback for MM/DD/YYYY if standard parsing fails or is ambiguous
+    if (isNaN(dateObj.getTime()) || (cleanDate.includes('/') && !cleanDate.includes('-'))) {
+      const parts = cleanDate.split('/');
+      if (parts.length === 3) {
+        // Assume MM/DD/YYYY
+        const m = parseInt(parts[0], 10) - 1;
+        const d = parseInt(parts[1], 10);
+        const y = parseInt(parts[2], 10);
+        const fallbackDate = new Date(y, m, d);
+        if (!isNaN(fallbackDate.getTime())) dateObj = fallbackDate;
+      }
+    }
+
+    if (isNaN(dateObj.getTime())) return 'q1';
+    
+    const month = dateObj.getMonth(); // 0-indexed
+    if (month <= 2) return 'q1'; // Jan, Feb, Mar
+    if (month <= 5) return 'q2'; // Apr, May, Jun
+    if (month <= 8) return 'q3'; // Jul, Aug, Sep
+    return 'q4'; // Oct, Nov, Dec
   };
 
   useEffect(() => {
@@ -339,6 +361,28 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
           </p>
         </div>
       </div>
+
+      {(!user?.department || !user?.position) && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 flex flex-col sm:flex-row items-center gap-4 transition-all hover:bg-amber-100/50 group">
+          <div className="bg-amber-100 p-3 rounded-xl text-amber-600 group-hover:scale-110 transition-transform">
+            <AlertTriangle className="w-6 h-6" />
+          </div>
+          <div className="flex-1 text-center sm:text-left">
+            <h3 className="text-sm font-semibold text-amber-900">Incomplete Profile Information</h3>
+            <p className="text-xs text-amber-700 mt-1 leading-relaxed">
+              Your <b>Department</b> and <b>Position/Role</b> are required for accurate IPCR generation. Please update them in your profile.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              if (onNavigate) onNavigate('profile');
+            }}
+            className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-xs font-medium shadow-sm transition-colors whitespace-nowrap"
+          >
+            Update Profile <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       <div className="flex justify-center -mt-6">
         <div className="bg-gray-100 p-1 rounded-xl inline-flex shadow-inner">
@@ -586,7 +630,9 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
                               {userExtensions.map(ext => (
                                 <tr key={ext.id} className="hover:bg-white transition-colors">
                                   <td className="border border-blue-100 p-2 font-medium">{ext.title}</td>
-                                  <td className="border border-blue-100 p-2 text-center">{new Date(ext.date).toLocaleDateString()}</td>
+                                  <td className="border border-blue-100 p-2 text-center">
+                                    {ext.date && ext.date.includes(' - ') ? ext.date : (new Date(ext.date).toLocaleDateString())}
+                                  </td>
                                   <td className="border border-blue-100 p-2 text-center font-bold text-gray-400">{ext.beneficiaries}</td>
                                   <td className="border border-blue-100 p-2 text-center font-bold text-blue-700">{ext.userBeneficiaryShare}</td>
                                 </tr>
@@ -803,9 +849,17 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
                                     className="w-full rounded-lg border-gray-300 shadow-sm focus:border-gray-400 focus:ring-gray-400 sm:text-sm p-1.5 border bg-white"
                                   >
                                     <option value="" disabled>Select Faculty</option>
-                                    {regularFaculty.map(f => (
-                                      <option key={f.id} value={f.id}>{f.name}</option>
-                                    ))}
+                                    {regularFaculty.map(f => {
+                                      // Check if this faculty is already selected in ANY group, excluding the current member
+                                      const isAlreadySelected = extensionists.some(g => 
+                                        g.members.some(m => m.userId == f.id && m !== member)
+                                      );
+                                      return (
+                                        <option key={f.id} value={f.id} disabled={isAlreadySelected}>
+                                          {f.name} {isAlreadySelected ? '(Already Selected)' : ''}
+                                        </option>
+                                      );
+                                    })}
                                   </select>
                                 ) : (
                                   <input
@@ -872,7 +926,9 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
                         <div className="flex items-center gap-2 mt-1">
                           <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{item.accomplishment_category || 'General'}</span>
                           <span className="text-gray-300 text-xs">•</span>
-                          <span className="text-xs text-gray-500">{new Date(item.date).toLocaleDateString()}</span>
+                          <span className="text-xs text-gray-500">
+                            {item.date && item.date.includes(' - ') ? item.date : (new Date(item.date).toLocaleDateString())}
+                          </span>
                           {item.userBeneficiaryShare !== undefined && (
                             <>
                               <span className="text-gray-300 text-xs">•</span>
@@ -908,8 +964,10 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
               <p className="text-sm text-gray-500 mt-2 max-w-sm mx-auto leading-relaxed">
                 Files will be categorized using AI.
               </p>
+
               {/* Manual Input for IPCR "if set to Auto-Detect, or manually assigned to your chosen category"*/}
-              {/*<div className="mt-6 max-w-xs mx-auto">
+              {/*
+              <div className="mt-6 max-w-xs mx-auto">
                 <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Categorization Mode</label>
                 <select
                   value={selectedUploadCategory}
@@ -917,7 +975,7 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
                   disabled={isUploading}
                   className="w-full rounded-xl border-gray-200 bg-white text-sm font-medium text-gray-700 shadow-sm focus:border-blue-400 focus:ring-blue-400 p-2.5 transition-all"
                 >
-                  
+
                   <option value="auto">✨ Auto-Detect (AI Classifier)</option>
                   <optgroup label="Manual Categories (Bypass AI)">
                     {Object.entries(CATEGORY_NAMES).map(([key, name]) => (
@@ -950,6 +1008,7 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
                   </span>
                 </label>
               </div>
+
 
               {isUploading && (
                 <div className="mt-6 w-full max-w-sm mx-auto">

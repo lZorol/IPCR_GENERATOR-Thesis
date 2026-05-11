@@ -96,7 +96,8 @@ router.get('/google/callback', async (req, res) => {
           department: user.department,
           profileImage: picture,
           tokens: tokens,
-          is_regular_faculty: user.is_regular_faculty !== null ? user.is_regular_faculty : 1
+          is_regular_faculty: user.is_regular_faculty !== null ? user.is_regular_faculty : 1,
+          position: user.position || ''
         }));
 
         res.redirect(`http://localhost:5173/auth/success?user=${userData}`);
@@ -108,7 +109,7 @@ router.get('/google/callback', async (req, res) => {
         `;
 
         // Default role is professor, department extracted from email if @lspu.edu.ph
-        const department = email.includes('@lspu.edu.ph') ? 'Computer Science' : 'Unknown';
+        const department = email.includes('@lspu.edu.ph') ? 'Computer Science' : '';
         const role = 'professor';
 
         db.run(insertQuery, [id, email, name, role, department, picture, JSON.stringify(tokens)], function(err) {
@@ -146,7 +147,7 @@ router.get('/me', (req, res) => {
     return res.status(401).json({ error: 'Not authenticated' });
   }
 
-  db.get('SELECT id, email, name, role, department, profile_image, is_regular_faculty FROM users WHERE id = ?', [userId], (err, user) => {
+  db.get('SELECT id, email, name, role, department, profile_image, is_regular_faculty, position FROM users WHERE id = ?', [userId], (err, user) => {
     if (err) {
       return res.status(500).json({ error: err.message });
     }

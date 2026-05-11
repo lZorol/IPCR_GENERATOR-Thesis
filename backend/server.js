@@ -16,7 +16,7 @@ const presetsRoutes = require("./routes/presets");
 const academicYearsRoutes = require("./routes/academicYears");
 const GoogleDriveService = require("./utils/googleDrive");
 const { saveIPCR } = require("./saveIPCR");
-const { categoryMap, autoRate } = require("./ipcrCalculator");
+const { categoryMap, autoRate, calculateOverallRating } = require("./ipcrCalculator");
 const initializeAcademicYears = require("./utils/initializeAcademicYears");
 const detectSchoolYear = require("./utils/detectSchoolYear");
 const createSchoolYearIfMissing = require("./utils/createSchoolYearIfMissing");
@@ -57,6 +57,33 @@ function getActiveConfig() {
       }
     );
   });
+}
+
+/**
+ * Helper to determine quarter from a date string (handles ranges and MM/DD/YYYY)
+ */
+function getQuarter(dateString) {
+  if (!dateString) return 1;
+  const cleanDate = dateString.includes(' - ') ? dateString.split(' - ')[0] : dateString;
+  let dateObj = new Date(cleanDate);
+  
+  if (isNaN(dateObj.getTime()) || (cleanDate.includes('/') && !cleanDate.includes('-'))) {
+    const parts = cleanDate.split('/');
+    if (parts.length === 3) {
+      const m = parseInt(parts[0], 10) - 1;
+      const d = parseInt(parts[1], 10);
+      const y = parseInt(parts[2], 10);
+      const fallbackDate = new Date(y, m, d);
+      if (!isNaN(fallbackDate.getTime())) dateObj = fallbackDate;
+    }
+  }
+
+  if (isNaN(dateObj.getTime())) return 1;
+  const month = dateObj.getMonth();
+  if (month <= 2) return 1;
+  if (month <= 5) return 2;
+  if (month <= 8) return 3;
+  return 4;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -307,10 +334,6 @@ app.get("/api/users/regular", (req, res) => {
   );
 });
 
-const getQuarter = (dateString) => {
-  const month = new Date(dateString).getMonth() + 1; // 1-12
-  return Math.ceil(month / 3); // Returns 1, 2, 3, or 4
-};
 
 app.post("/api/accomplishments/manual", upload.single("file"), async (req, res) => {
   try {
@@ -496,8 +519,37 @@ app.post("/api/accomplishments/manual", upload.single("file"), async (req, res) 
 });
 
 /**
+ * Helper to find the "partner" semester in the same calendar year.
+ * Rule:
+ * - YYYY-(YYYY+1) 2nd Sem -> Year YYYY+1
+ * - (YYYY+1)-(YYYY+2) 1st Sem -> Year YYYY+1
+ */
+function getCalendarYearPartners(academicYear, semester) {
+  if (!academicYear) return [];
+  const parts = academicYear.split('-');
+  if (parts.length < 2) return [{ year: academicYear, sem: semester }];
+  
+  const y1 = parseInt(parts[0]);
+  const y2 = parseInt(parts[1]);
+  
+  if (semester && semester.includes('2nd')) {
+    // Partner is next academic year's 1st semester
+    return [
+      { year: academicYear, sem: semester },
+      { year: `${y2}-${y2 + 1}`, sem: '1st Semester' }
+    ];
+  } else {
+    // Partner is previous academic year's 2nd semester
+    return [
+      { year: academicYear, sem: semester },
+      { year: `${y1 - 1}-${y1}`, sem: '2nd Semester' }
+    ];
+  }
+}
+
+/**
  * GET /api/accomplishments/history/:userId
- * Fetch manual accomplishments for a user
+ * Fetch manual accomplishments for a user (Grouped by Calendar Year)
  */
 app.get("/api/accomplishments/history/:userId", async (req, res) => {
   const userId = parseInt(req.params.userId, 10) || req.params.userId;
@@ -505,12 +557,17 @@ app.get("/api/accomplishments/history/:userId", async (req, res) => {
   const academicYear = req.query.year || active.academic_year;
   const semester = req.query.semester || active.semester;
 
+  const partners = getCalendarYearPartners(academicYear, semester);
+  const conditions = partners.map(() => "(academic_year = ? AND semester = ?)").join(" OR ");
+  const params = [userId];
+  partners.forEach(p => { params.push(p.year); params.push(p.sem); });
+
   db.all(
     `SELECT * FROM faculty_accomplishments 
      WHERE (user_id = ? OR accomplishment_category = 'Extension' OR accomplishment_category = 'Research') 
-     AND academic_year = ? AND semester = ? 
+     AND (${conditions}) 
      ORDER BY created_at DESC`,
-    [userId, academicYear, semester],
+    params,
     (err, rows) => {
       if (err) return res.status(500).json({ error: err.message });
 
@@ -537,7 +594,7 @@ app.get("/api/accomplishments/history/:userId", async (req, res) => {
 });
 
 /**
- * Fetch individual extension projects for a specific user (Faculty Accomplishment Grid)
+ * Fetch individual extension projects for a specific user (Grouped by Calendar Year)
  */
 app.get("/api/accomplishments/extension/:userId", async (req, res) => {
   const userId = req.params.userId;
@@ -545,11 +602,16 @@ app.get("/api/accomplishments/extension/:userId", async (req, res) => {
   const academicYear = req.query.year || active.academic_year;
   const semester = req.query.semester || active.semester;
 
+  const partners = getCalendarYearPartners(academicYear, semester);
+  const conditions = partners.map(() => "(academic_year = ? AND semester = ?)").join(" OR ");
+  const params = [];
+  partners.forEach(p => { params.push(p.year); params.push(p.sem); });
+
   db.all(
     `SELECT * FROM faculty_accomplishments 
      WHERE accomplishment_category = 'List of Extension' 
-     AND academic_year = ? AND semester = ?`,
-    [academicYear, semester],
+     AND (${conditions})`,
+    params,
     (err, rows) => {
       if (err) return res.status(500).json({ error: err.message });
       
@@ -604,75 +666,121 @@ app.post("/api/documents/upload", upload.array("files"), async (req, res) => {
     const userTokens = tokens ? (typeof tokens === "string" ? JSON.parse(tokens) : tokens) : null;
     const results = [];
 
+    // Initialize Google Drive once for the whole request if tokens are present
+    let preCalculatedDriveData = null;
+    let driveService = null;
+    if (userTokens) {
+      try {
+        driveService = new GoogleDriveService(userTokens);
+        const facultyFolder = await driveService.getOrCreateFacultyFolderHierarchy(academicYear, semester, facultyName);
+        const { categoryFolders, categoryFolderLinks } = await driveService.ensureCategoryFolders(facultyFolder.id);
+        preCalculatedDriveData = { facultyFolder, categoryFolders, categoryFolderLinks };
+        console.log(`📂 Pre-initialized Google Drive folders for ${facultyName}`);
+      } catch (err) {
+        console.warn("⚠️ Failed to pre-initialize Google Drive hierarchy:", err.message);
+      }
+    }
+
+    // Global Lock for ML Classification to prevent crashing the ML service 
+    // when multiple users upload files at the same time.
+    if (!global.mlLock) {
+      global.mlLock = Promise.resolve();
+    }
+
+    // 1. Sequential processing: Classify and Upload each file
+    const taskResults = [];
     for (const file of files) {
       try {
-        console.log(`Processing file: ${file.originalname}`);
-
         const manualCategory = req.body.manualCategory || 'auto';
         let dbCategory, confidence;
 
         if (manualCategory !== 'auto') {
-          // USER BYPASS: Use manual category instead of AI
           dbCategory = categoryMap[manualCategory] || manualCategory;
           confidence = 1.0;
-          console.log(`👤 Manual Category selected: ${dbCategory}. Bypassing AI.`);
         } else {
-          // AI CLASSIFICATION
-          const formData = new FormData();
-          formData.append("file", fs.createReadStream(file.path), {
-            filename: file.originalname,
-            contentType: "application/pdf",
-          });
+          // AI CLASSIFICATION (Serialized across all users via global.mlLock)
+          const aiResult = await (global.mlLock = global.mlLock.then(async () => {
+            try {
+              const formData = new FormData();
+              formData.append("file", fs.createReadStream(file.path), {
+                filename: file.originalname,
+                contentType: "application/pdf",
+              });
+              const mlEndpoint = "http://127.0.0.1:5050/classify";
+              const mlResponse = await axios.post(mlEndpoint, formData, {
+                headers: formData.getHeaders(),
+                timeout: 120000, // 2 minutes
+              });
+              return mlResponse.data;
+            } catch (mlErr) {
+              console.error(`ML Error for ${file.originalname}:`, mlErr.message);
+              throw mlErr;
+            }
+          }).catch(err => {
+            // Ensure the lock recovers even if a task fails
+            console.error("Lock recovery triggered");
+            return null; 
+          }));
 
-          // Hard fix: Explicitly use Port 5050 to bypass Windows port 5000 conflicts
-          const mlEndpoint = "http://127.0.0.1:5050/classify";
-          console.log(`🤖 Requesting AI classification at: ${mlEndpoint}`);
+          if (!aiResult) throw new Error("AI Classification failed");
 
-          const mlResponse = await axios.post(mlEndpoint, formData, {
-            headers: formData.getHeaders(),
-            timeout: 30000,
-          });
-          
-          const aiResult = mlResponse.data;
           dbCategory = categoryMap[aiResult.category] || aiResult.category;
           confidence = aiResult.confidence;
         }
 
-        // Google Drive upload with new folder structure
+        // Google Drive upload
         let driveResult = null;
-        if (userTokens) {
+        if (driveService && preCalculatedDriveData) {
           try {
-            const driveService = new GoogleDriveService(userTokens);
             driveResult = await driveService.uploadFile(
               file.path,
               file.originalname,
               dbCategory,
               academicYear,
               semester,
-              facultyName
+              facultyName,
+              preCalculatedDriveData
             );
           } catch (err) {
-            console.warn("Drive upload failed:", err.message);
+            console.warn(`Drive upload failed for ${file.originalname}:`, err.message);
           }
         }
 
-        const driveUploaded = !!driveResult;
-        const driveId = driveUploaded ? driveResult.fileId : Math.random().toString(36).substring(7);
-        const driveLink = driveUploaded ? driveResult.webViewLink : `https://drive.google.com/file/d/${driveId}`;
+        taskResults.push({ file, dbCategory, confidence, driveResult, success: true });
+        console.log(`✅ Processed & Uploaded: ${file.originalname}`);
+      } catch (err) {
+        console.error(`Task error for ${file.originalname}:`, err.message);
+        taskResults.push({ file, success: false, error: err.message });
+      }
+    }
 
-        // Save document info (with year + semester)
-        db.run(
-          `INSERT INTO documents
-           (user_id, filename, original_filename, file_size, category, confidence,
-            google_drive_id, google_drive_link, academic_year, semester)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [userId, file.filename, file.originalname, file.size, dbCategory,
-            confidence, driveId, driveLink, academicYear, semester]
-        );
+    // 2. Sequential processing: Save to DB and update IPCR (to avoid SQLite race conditions)
+    for (const resItem of taskResults) {
+      if (!resItem.success) {
+        if (resItem.file && fs.existsSync(resItem.file.path)) await fs.remove(resItem.file.path);
+        continue;
+      }
 
-        // Update IPCR record (scoped to year + semester)
-        // Hard Fix: We no longer fetch the target here to avoid passing a default '5' 
-        // that overwrites custom settings. We let saveIPCR handle target resolution.
+      const { file, dbCategory, confidence, driveResult } = resItem;
+      const driveUploaded = !!driveResult;
+      const driveId = driveUploaded ? driveResult.fileId : Math.random().toString(36).substring(7);
+      const driveLink = driveUploaded ? driveResult.webViewLink : `https://drive.google.com/file/d/${driveId}`;
+
+      try {
+        // Save document info
+        await new Promise((resolve, reject) => {
+          db.run(
+            `INSERT INTO documents
+             (user_id, filename, original_filename, file_size, category, confidence,
+              google_drive_id, google_drive_link, academic_year, semester)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [userId, file.filename, file.originalname, file.size, dbCategory,
+              confidence, driveId, driveLink, academicYear, semester],
+            (err) => (err ? reject(err) : resolve())
+          );
+        });
+
+        // Update IPCR record count
         const ipcrRecord = await new Promise((resolve) =>
           db.get(
             `SELECT accomplished FROM ipcr_records
@@ -685,23 +793,25 @@ app.post("/api/documents/upload", upload.array("files"), async (req, res) => {
         const newAccomplished = (ipcrRecord?.accomplished || 0) + 1;
         await saveIPCR(userId, dbCategory, newAccomplished, null, academicYear, semester);
 
-        // Store the category-specific folder link on this category's ipcr_record row
+        // Store folder link
         if (driveResult && driveResult.categoryFolderLinks) {
           const catKey = dbCategory.replace(/\s+/g, '').toLowerCase();
           const folderLink = driveResult.categoryFolderLinks[catKey] || null;
           if (folderLink) {
-            db.run(
-              `UPDATE ipcr_records SET folder_link = ? WHERE user_id = ? AND category = ? AND academic_year = ? AND semester = ?`,
-              [folderLink, userId, dbCategory, academicYear, semester]
-            );
+            await new Promise((resolve) => {
+              db.run(
+                `UPDATE ipcr_records SET folder_link = ? WHERE user_id = ? AND category = ? AND academic_year = ? AND semester = ?`,
+                [folderLink, userId, dbCategory, academicYear, semester],
+                () => resolve()
+              );
+            });
           }
         }
 
         results.push({ filename: file.originalname, category: dbCategory, confidence, driveLink, driveUploaded });
-
-        await fs.remove(file.path);
-      } catch (err) {
-        console.error("File processing error:", err.message);
+      } catch (dbErr) {
+        console.error(`DB error for ${file.originalname}:`, dbErr.message);
+      } finally {
         if (fs.existsSync(file.path)) await fs.remove(file.path);
       }
     }
@@ -873,8 +983,8 @@ app.put("/api/profile/:userId", (req, res) => {
 
     // Also update the users table name, department, and is_regular_faculty so it reflects everywhere
     db.run(
-      `UPDATE users SET name = COALESCE(?, name), department = COALESCE(?, department), is_regular_faculty = 1 WHERE id = ?`,
-      [name || null, department || null, userId],
+      `UPDATE users SET name = COALESCE(?, name), department = COALESCE(?, department), position = COALESCE(?, position), is_regular_faculty = 1 WHERE id = ?`,
+      [name || null, department || null, position || null, userId],
       (err2) => {
         if (err2) console.error("Error syncing users table:", err2.message);
         res.json({ success: true, message: "Profile updated successfully" });
@@ -996,17 +1106,8 @@ app.get("/api/admin/ipcr", async (req, res) => {
         }
       });
 
-      // Compute Overall Rating for the Admin Summary (Strict All-Category Inclusion)
-      const masterKeys = Object.keys(categoryMap);
-      let totalCategoryRatings = 0;
-
-      masterKeys.forEach(key => {
-        totalCategoryRatings += ipcrData[key].rating;
-      });
-
-      const overallRating = masterKeys.length > 0 
-        ? Number((totalCategoryRatings / masterKeys.length).toFixed(2))
-        : 1.0;
+      // Compute Overall Rating for the Admin Summary (Using Group-Weighted IPCR Method)
+      const overallRating = calculateOverallRating(ipcrData);
 
       return {
         ...user,

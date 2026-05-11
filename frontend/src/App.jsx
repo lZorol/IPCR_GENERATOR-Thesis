@@ -310,9 +310,10 @@ const App = () => {
         availableYears={availableYears}
         availableSemesters={availableSemesters}
         onManualSubmitSuccess={() => fetchIPCRData(user.id, selectedYear, selectedSemester)}
+        onNavigate={setCurrentPage}
       />
     ),
-    profile: <ProfilePage user={user} />,
+    profile: <ProfilePage user={user} setUser={setUser} />,
     targets: (
       <TargetSetup
         user={user}

@@ -19,19 +19,31 @@ const DEFAULT_TARGETS = {
   communityImmersion: 5,
 };
 
-const WEIGHTS = {
-  syllabus: 0.5,
-  courseGuide: 0.5,
-  slm: 0.5,
-  tos: 0.5,
-  gradingSheet: 0.5,
-  testQuestions: 0.5,
-  attendanceSheet: 0.5,
-  classRecord: 0.5,
-  classroomObservation: 0.5,
-  evaluationOfTeachingEffectiveness: 0.5,
-  accomplishmentReport: 0.5,
-  communityImmersion: 0.5
+const CATEGORY_GROUPS = {
+  instruction: [
+    'syllabus', 'courseGuide', 'slm', 'communityImmersion', 'gradingSheet', 'tos', 'attendanceSheet', 'classRecord',
+    'evaluationOfTeachingEffectiveness', 'classroomObservation', 'testQuestions', 'answerKeys',
+    'facultyAndStudentsSeekAdvices', 'accomplishmentReport'
+  ],
+  research: [
+    'randdProposal', 'researchImplemented', 'researchPresented', 'researchPublished',
+    'intellectualPropertyRights', 'researchUtilizedDeveloped', 'numberOfCitations'
+  ],
+  extension: [
+    'extentionProposal', 'personsTrained', 'personServiceRating', 'personGivenTraining', 'technicalAdvice'
+  ],
+  support: [
+    'attendanceFlagCeremony', 'attendanceFlagLowering', 'attendanceHealthAndWellnessProgram',
+    'attendanceSchoolCelebrations', 'trainingSeminarConferenceCertificate', 'atttendanceFacultyMeeting',
+    'attendanceISOAndRelatedActivities', 'attendaceSpiritualActivities'
+  ]
+};
+
+const GROUP_WEIGHTS = {
+  instruction: 0.45,
+  research: 0.25,
+  extension: 0.20,
+  support: 0.10
 };
 
 /**
@@ -85,28 +97,39 @@ function computeCategory(category, accomplished, targetOverride) {
     Q,
     E,
     T,
-    rating,
-    weight: WEIGHTS[category] || 0
+    rating
   };
 }
 
 /**
  * Calculate overall IPCR rating
  */
-function calculateOverallRating(rows) {
+function calculateOverallRating(ipcrData) {
+  let totalWeightedRating = 0;
 
-  const total = rows.reduce((sum, r) => {
-    return sum + (r.rating * r.weight);
-  }, 0);
+  for (const [group, categories] of Object.entries(CATEGORY_GROUPS)) {
+    const groupWeight = GROUP_WEIGHTS[group] || 0;
+    
+    // Get ratings for categories in this group that exist in ipcrData
+    const groupRatings = categories
+      .map(cat => ipcrData[cat]?.rating)
+      .filter(rating => rating !== undefined && rating !== null);
 
-  return Number(total.toFixed(2));
+    if (groupRatings.length > 0) {
+      const groupAverage = groupRatings.reduce((sum, r) => sum + r, 0) / groupRatings.length;
+      totalWeightedRating += groupAverage * groupWeight;
+    }
+  }
+
+  // Handle the case where no ratings exist
+  return Number(totalWeightedRating.toFixed(2)) || 1.0;
 }
 
 const categoryMap = {
   syllabus: "Syllabus",
   courseGuide: "Course Guide",
   slm: "SLM",
-  communityImmersion: "Number of subject areas with community immersion/involvement component",
+  communityImmersion: "Community Immersion",
   gradingSheet: "Grading Sheet",
   tos: "TOS",
   attendanceSheet: "Attendance Sheet",
