@@ -321,6 +321,29 @@ async function exportManualAccomplishmentsToExcel(academicYear, semester) {
     computedYear = endYear;
   }
 
+  // Robust getQuarter helper for Excel
+  const getQuarter = (dateString) => {
+    if (!dateString) return 1;
+    const cleanDate = dateString.includes(' - ') ? dateString.split(' - ')[0] : dateString;
+    let dateObj = new Date(cleanDate);
+    if (isNaN(dateObj.getTime()) || (cleanDate.includes('/') && !cleanDate.includes('-'))) {
+      const parts = cleanDate.split('/');
+      if (parts.length === 3) {
+        const m = parseInt(parts[0], 10) - 1;
+        const d = parseInt(parts[1], 10);
+        const y = parseInt(parts[2], 10);
+        const fallbackDate = new Date(y, m, d);
+        if (!isNaN(fallbackDate.getTime())) dateObj = fallbackDate;
+      }
+    }
+    if (isNaN(dateObj.getTime())) return 1;
+    const month = dateObj.getMonth();
+    if (month <= 2) return 1;
+    if (month <= 5) return 2;
+    if (month <= 8) return 3;
+    return 4;
+  };
+
   // Calculate the Left and Right School Years
   const leftSchoolYear = `${computedYear - 1}-${computedYear}`;
   const rightSchoolYear = `${computedYear}-${computedYear + 1}`;
@@ -357,16 +380,11 @@ async function exportManualAccomplishmentsToExcel(academicYear, semester) {
   records.forEach(record => {
     if (!record.date || record.accomplishment_category === 'Research' || record.accomplishment_category === 'Extension' || record.accomplishment_category === 'List of Extension') return;
 
-    const dateObj = new Date(record.date);
-    const month = dateObj.getMonth(); // 0-11
+    const qNum = getQuarter(record.date);
+    const suffixes = ["", "st", "nd", "rd", "th"];
+    const sheetName = `${qNum}${suffixes[qNum]} Quarter`;
 
-    let sheetName = "1st Quarter";
-    if (month >= 0 && month <= 2) sheetName = "1st Quarter";
-    else if (month >= 3 && month <= 5) sheetName = "2nd Quarter";
-    else if (month >= 6 && month <= 8) sheetName = "3rd Quarter";
-    else if (month >= 9 && month <= 11) sheetName = "4th Quarter";
-
-    const ws = workbook.getWorksheet(sheetName) || workbook.worksheets[Math.floor(month / 3)];
+    const ws = workbook.getWorksheet(sheetName) || workbook.worksheets[qNum - 1];
     if (ws) {
       if (!ws.nextRowIndex) ws.nextRowIndex = 3;
 
