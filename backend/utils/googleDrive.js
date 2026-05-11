@@ -14,7 +14,6 @@ class GoogleDriveService {
     }
 
     this.drive = google.drive({ version: 'v3', auth: this.oauth2Client });
-    this.folderCache = new Map(); // Simple in-memory cache for folder IDs
   }
 
   /**
@@ -34,53 +33,70 @@ class GoogleDriveService {
     }
   }
 
+  // Global cache for folder IDs to prevent race conditions across multiple requests
+  static folderPromises = new Map();
+
   /**
    * Find or create a folder by name under an optional parent.
+   * This uses a static promise cache to ensure that concurrent requests for the same folder
+   * wait for a single API operation instead of triggering multiple creates.
    */
   async findOrCreateFolder(folderName, parentId = null) {
-    const cacheKey = `${folderName}_${parentId || 'root'}`;
-    if (this.folderCache.has(cacheKey)) {
-      return this.folderCache.get(cacheKey);
+    // Partition the cache by the user's access token to avoid permission issues 
+    // when multiple users/accounts are active simultaneously.
+    const userKey = this.oauth2Client.credentials.access_token 
+      ? this.oauth2Client.credentials.access_token.substring(0, 16) 
+      : 'public';
+    const cacheKey = `${userKey}_${folderName}_${parentId || 'root'}`;
+    
+    if (GoogleDriveService.folderPromises.has(cacheKey)) {
+      console.log(`📂 Folder already exists or creation in progress (cached): ${folderName}`);
+      return GoogleDriveService.folderPromises.get(cacheKey);
     }
 
-    try {
-      const query = parentId
-        ? `name='${folderName}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`
-        : `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    const folderPromise = (async () => {
+      try {
+        const query = parentId
+          ? `name='${folderName}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`
+          : `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
 
-      const response = await this.drive.files.list({
-        q: query,
-        fields: 'files(id, name, webViewLink)',
-        spaces: 'drive'
-      });
-
-      let folder;
-      if (response.data.files.length > 0) {
-        folder = response.data.files[0];
-      } else {
-        // Create new folder
-        const fileMetadata = {
-          name: folderName,
-          mimeType: 'application/vnd.google-apps.folder',
-          ...(parentId && { parents: [parentId] })
-        };
-
-        const result = await this.drive.files.create({
-          requestBody: fileMetadata,
-          fields: 'id, name, webViewLink'
+        const response = await this.drive.files.list({
+          q: query,
+          fields: 'files(id, name, webViewLink)',
+          spaces: 'drive'
         });
-        folder = result.data;
 
-        // Make newly created folder publicly viewable via link
-        await this.setPublicPermission(folder.id);
+        let folder;
+        if (response.data.files.length > 0) {
+          folder = response.data.files[0];
+        } else {
+          console.log(`🆕 Creating new folder: ${folderName}`);
+          const fileMetadata = {
+            name: folderName,
+            mimeType: 'application/vnd.google-apps.folder',
+            ...(parentId && { parents: [parentId] })
+          };
+
+          const result = await this.drive.files.create({
+            requestBody: fileMetadata,
+            fields: 'id, name, webViewLink'
+          });
+          folder = result.data;
+
+          // Make newly created folder publicly viewable via link
+          await this.setPublicPermission(folder.id);
+        }
+
+        return folder;
+      } catch (error) {
+        // If creation fails, we must remove the promise from the cache so it can be retried
+        GoogleDriveService.folderPromises.delete(cacheKey);
+        throw error;
       }
+    })();
 
-      this.folderCache.set(cacheKey, folder);
-      return folder;
-    } catch (error) {
-      console.error('Error finding/creating folder:', error);
-      throw error;
-    }
+    GoogleDriveService.folderPromises.set(cacheKey, folderPromise);
+    return folderPromise;
   }
 
   /**
@@ -97,43 +113,75 @@ class GoogleDriveService {
    * @param {string} [facultyName]  - uploader's display name
    * @returns {{ fileId, fileName, webViewLink, webContentLink, folderPath, categoryFolderLinks }}
    */
-  async uploadFile(filePath, fileName, category, academicYear = '2025-2026', semester = '1st Semester', facultyName = 'Faculty') {
+  /**
+   * Builds the base hierarchy: IPCR → year → semester → faculty.
+   * Returns the faculty folder object.
+   */
+  async getOrCreateFacultyFolderHierarchy(academicYear, semester, facultyName) {
+    const ipcrFolder    = await this.findOrCreateFolder('IPCR');
+    const yearFolder    = await this.findOrCreateFolder(academicYear, ipcrFolder.id);
+    const semFolder     = await this.findOrCreateFolder(semester, yearFolder.id);
+    const facultyFolder = await this.findOrCreateFolder(facultyName, semFolder.id);
+    return facultyFolder;
+  }
+
+  /**
+   * Pre-creates/finds all category folders under a faculty folder.
+   * Returns a map of category names to their webViewLinks.
+   */
+  async ensureCategoryFolders(facultyFolderId) {
+    const categories = [
+      'Syllabus', 'Course Guide', 'SLM', 'Grading Sheet', 'TOS',
+      'Attendance Sheet', 'Class Record', 'Evaluation of Teaching Effectiveness',
+      'Classroom Observation', 'Test Questions', 'Answer Keys',
+      'Faculty and Students Seek Advices', 'Accomplishment Report',
+      'R&D Proposal', 'Research Implemented', 'Research Presented',
+      'Research Published', 'Intellectual Property Rights',
+      'Research Utilized/Developed', 'Number of Citations',
+      'Extension Proposal', 'Persons Trained', 'Person Service Rating',
+      'Person Given Training', 'Technical Advice',
+      'Accomplishment Report Support', 'Attendance Flag Ceremony',
+      'Attendance Flag Lowering', 'Attendance Health and Wellness Program',
+      'Attendance School Celebrations', 'Training/Seminar/Conference Certificate',
+      'Attendance Faculty Meeting', 'Attendance ISO and Related Activities',
+      'Attendance Spiritual Activities'
+    ];
+
+    const categoryFolderLinks = {};
+    const categoryFolders = {};
+
+    await Promise.all(categories.map(async (cat) => {
+      const folder = await this.findOrCreateFolder(cat, facultyFolderId);
+      const key = cat.replace(/\s+/g, '').toLowerCase();
+      categoryFolderLinks[key] = folder.webViewLink || `https://drive.google.com/drive/folders/${folder.id}`;
+      categoryFolders[cat] = folder;
+    }));
+
+    return { categoryFolderLinks, categoryFolders };
+  }
+
+  /**
+   * Upload a file to Google Drive.
+   */
+  async uploadFile(filePath, fileName, category, academicYear = '2025-2026', semester = '1st Semester', facultyName = 'Faculty', preCalculatedData = null) {
     try {
-      // Build hierarchy: IPCR → year → semester → faculty
-      const ipcrFolder    = await this.findOrCreateFolder('IPCR');
-      const yearFolder    = await this.findOrCreateFolder(academicYear, ipcrFolder.id);
-      const semFolder     = await this.findOrCreateFolder(semester, yearFolder.id);
-      const facultyFolder = await this.findOrCreateFolder(facultyName, semFolder.id);
+      let facultyFolder;
+      let categoryFolders;
+      let categoryFolderLinks;
 
-      // Create/find ALL category folders under the faculty folder
-      const categories = [
-        'Syllabus', 'Course Guide', 'SLM', 'Grading Sheet', 'TOS',
-        'Attendance Sheet', 'Class Record', 'Evaluation of Teaching Effectiveness',
-        'Classroom Observation', 'Test Questions', 'Answer Keys',
-        'Faculty and Students Seek Advices', 'Accomplishment Report',
-        'R&D Proposal', 'Research Implemented', 'Research Presented',
-        'Research Published', 'Intellectual Property Rights',
-        'Research Utilized/Developed', 'Number of Citations',
-        'Extension Proposal', 'Persons Trained', 'Person Service Rating',
-        'Person Given Training', 'Technical Advice',
-        'Accomplishment Report Support', 'Attendance Flag Ceremony',
-        'Attendance Flag Lowering', 'Attendance Health and Wellness Program',
-        'Attendance School Celebrations', 'Training/Seminar/Conference Certificate',
-        'Attendance Faculty Meeting', 'Attendance ISO and Related Activities',
-        'Attendance Spiritual Activities'
-      ];
-
-      const categoryFolderLinks = {};
-
-      // PARALLEL FOLDER CREATION (Massive Speed Up)
-      await Promise.all(categories.map(async (cat) => {
-        const folder = await this.findOrCreateFolder(cat, facultyFolder.id);
-        const key = cat.replace(/\s+/g, '').toLowerCase();
-        categoryFolderLinks[key] = folder.webViewLink || `https://drive.google.com/drive/folders/${folder.id}`;
-      }));
+      if (preCalculatedData) {
+        facultyFolder = preCalculatedData.facultyFolder;
+        categoryFolders = preCalculatedData.categoryFolders;
+        categoryFolderLinks = preCalculatedData.categoryFolderLinks;
+      } else {
+        facultyFolder = await this.getOrCreateFacultyFolderHierarchy(academicYear, semester, facultyName);
+        const ensureResult = await this.ensureCategoryFolders(facultyFolder.id);
+        categoryFolders = ensureResult.categoryFolders;
+        categoryFolderLinks = ensureResult.categoryFolderLinks;
+      }
 
       // Find the specific category folder for this upload
-      const targetCatFolder = await this.findOrCreateFolder(category, facultyFolder.id);
+      const targetCatFolder = categoryFolders[category] || await this.findOrCreateFolder(category, facultyFolder.id);
 
       // Upload file
       const fileMetadata = {
@@ -157,8 +205,6 @@ class GoogleDriveService {
 
       const folderPath = `IPCR/${academicYear}/${semester}/${facultyName}/${category}`;
       console.log(`✅ Uploaded to Google Drive: ${file.data.name}`);
-      console.log(`   Path: ${folderPath}`);
-      console.log(`   Link: ${file.data.webViewLink}`);
 
       return {
         fileId: file.data.id,

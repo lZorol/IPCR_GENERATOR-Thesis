@@ -84,7 +84,7 @@ const DB_CATEGORY_TO_KEY = {
   Syllabus: "syllabus",
   "Course Guide": "courseGuide",
   SLM: "slm",
-  "Number of subject areas with community immersion/involvement component": "communityImmersion",
+  "Community Immersion": "communityImmersion",
   TOS: "tos",
   "Grading Sheet": "gradingSheet",
   "Attendance Sheet": "attendanceSheet",
@@ -140,7 +140,7 @@ async function exportIPCRToExcel(userId, academicYear, semester) {
 
   // 2. FETCH DATA IN PARALLEL
   const [user, records, userTargetRow] = await Promise.all([
-    new Promise(res => db.get(`SELECT u.*, COALESCE(up.name, u.name) as display_name, COALESCE(up.department, u.department) as display_department FROM users u LEFT JOIN user_profiles up ON u.id = up.user_id WHERE u.id = ?`, [uid], (err, row) => res(row))),
+    new Promise(res => db.get(`SELECT u.*, COALESCE(up.name, u.name) as display_name, COALESCE(up.department, u.department) as display_department, up.position FROM users u LEFT JOIN user_profiles up ON u.id = up.user_id WHERE u.id = ?`, [uid], (err, row) => res(row))),
     new Promise(res => db.all(`SELECT * FROM ipcr_records WHERE user_id = ? AND academic_year = ? AND semester = ?`, [uid, activeYear, activeSem], (err, rows) => res(rows || []))),
     new Promise(res => db.get(`SELECT * FROM user_targets WHERE user_id = ? AND academic_year = ? AND semester = ?`, [uid, activeYear, activeSem], (err, row) => res(row)))
   ]);
@@ -167,6 +167,10 @@ async function exportIPCRToExcel(userId, academicYear, semester) {
       worksheet.getCell(item.cell).value = finalString;
     });
 
+    // 3.5 Dynamic Commitment Statement (Cell A6)
+    const rank = user.position || 'Instructor';
+    const userName = (user.display_name || user.name || 'FACULTY').toUpperCase();
+    worksheet.getCell('A6').value = `I, ${userName}, - ${rank} of the Laguna State Polytechnic University, commit to deliver and agree to be rated on the attainment of the `;
   }
 
   // 4. POPULATE ROWS
@@ -224,7 +228,7 @@ async function exportIPCRToExcel(userId, academicYear, semester) {
   // ---------------------------------------------------------
   // FINAL CELL OVERRIDES (MUST BE PLACED IMMEDIATELY BEFORE writeBuffer)
   // ---------------------------------------------------------
-  const fetchedUserName = user?.display_name || user?.name || 'Name Not Found in DB';
+  const fetchedUserName = (user?.display_name || user?.name || 'Name Not Found in DB').toUpperCase();
 
   // 1. Dynamic Commitment Statement (Cell A7)
   worksheet.getCell('A7').value = `following in accordance with the indicated measures for the ${semester} of Academic Year ${academicYear}`;
@@ -256,13 +260,32 @@ async function exportManualAccomplishmentsToExcel(academicYear, semester) {
     workbook.addWorksheet("List of Extension");
   }
 
+  // Helper to find the "partner" semester in the same calendar year.
+  const getCalendarYearPartners = (ay, sem) => {
+    if (!ay) return [];
+    const parts = ay.split('-');
+    if (parts.length < 2) return [{ year: ay, sem: sem }];
+    const y1 = parseInt(parts[0]);
+    const y2 = parseInt(parts[1]);
+    if (sem && sem.includes('2nd')) {
+      return [{ year: ay, sem: sem }, { year: `${y2}-${y2 + 1}`, sem: '1st Semester' }];
+    } else {
+      return [{ year: ay, sem: sem }, { year: `${y1 - 1}-${y1}`, sem: '2nd Semester' }];
+    }
+  };
+
+  const partners = getCalendarYearPartners(academicYear, semester);
+  const conditions = partners.map(() => "(fa.academic_year = ? AND fa.semester = ?)").join(" OR ");
+  const queryParams = [];
+  partners.forEach(p => { queryParams.push(p.year); queryParams.push(p.sem); });
+
   const records = await new Promise((resolve, reject) => {
     db.all(
       `SELECT fa.*, u.name as participants, u.is_regular_faculty 
        FROM faculty_accomplishments fa
        JOIN users u ON fa.user_id = u.id
-       WHERE fa.academic_year = ? AND fa.semester = ?`,
-      [academicYear, semester],
+       WHERE (${conditions})`,
+      queryParams,
       (err, rows) => (err ? reject(err) : resolve(rows || []))
     );
   });
@@ -297,6 +320,29 @@ async function exportManualAccomplishmentsToExcel(academicYear, semester) {
   if (semester === '2nd Semester' || semester === '2nd') {
     computedYear = endYear;
   }
+
+  // Robust getQuarter helper for Excel
+  const getQuarter = (dateString) => {
+    if (!dateString) return 1;
+    const cleanDate = dateString.includes(' - ') ? dateString.split(' - ')[0] : dateString;
+    let dateObj = new Date(cleanDate);
+    if (isNaN(dateObj.getTime()) || (cleanDate.includes('/') && !cleanDate.includes('-'))) {
+      const parts = cleanDate.split('/');
+      if (parts.length === 3) {
+        const m = parseInt(parts[0], 10) - 1;
+        const d = parseInt(parts[1], 10);
+        const y = parseInt(parts[2], 10);
+        const fallbackDate = new Date(y, m, d);
+        if (!isNaN(fallbackDate.getTime())) dateObj = fallbackDate;
+      }
+    }
+    if (isNaN(dateObj.getTime())) return 1;
+    const month = dateObj.getMonth();
+    if (month <= 2) return 1;
+    if (month <= 5) return 2;
+    if (month <= 8) return 3;
+    return 4;
+  };
 
   // Calculate the Left and Right School Years
   const leftSchoolYear = `${computedYear - 1}-${computedYear}`;
@@ -334,16 +380,11 @@ async function exportManualAccomplishmentsToExcel(academicYear, semester) {
   records.forEach(record => {
     if (!record.date || record.accomplishment_category === 'Research' || record.accomplishment_category === 'Extension' || record.accomplishment_category === 'List of Extension') return;
 
-    const dateObj = new Date(record.date);
-    const month = dateObj.getMonth(); // 0-11
+    const qNum = getQuarter(record.date);
+    const suffixes = ["", "st", "nd", "rd", "th"];
+    const sheetName = `${qNum}${suffixes[qNum]} Quarter`;
 
-    let sheetName = "1st Quarter";
-    if (month >= 0 && month <= 2) sheetName = "1st Quarter";
-    else if (month >= 3 && month <= 5) sheetName = "2nd Quarter";
-    else if (month >= 6 && month <= 8) sheetName = "3rd Quarter";
-    else if (month >= 9 && month <= 11) sheetName = "4th Quarter";
-
-    const ws = workbook.getWorksheet(sheetName) || workbook.worksheets[Math.floor(month / 3)];
+    const ws = workbook.getWorksheet(sheetName) || workbook.worksheets[qNum - 1];
     if (ws) {
       if (!ws.nextRowIndex) ws.nextRowIndex = 3;
 
@@ -389,7 +430,7 @@ async function exportManualAccomplishmentsToExcel(academicYear, semester) {
     const usersData = {};
     allRegularFaculty.forEach(f => {
       usersData[f.id] = {
-        name: f.name,
+        name: (f.name || "").toUpperCase(),
         stat_proposal: 0, stat_completed: 0, stat_presented: 0,
         stat_ip_rights: 0, stat_utilized: 0, stat_citations: 0
       };
@@ -562,7 +603,7 @@ async function exportManualAccomplishmentsToExcel(academicYear, semester) {
         const acc = aggregatedFacultyData[faculty.id] || { q1: 0, q2: 0, q3: 0, q4: 0 };
 
         const row = ws6.getRow(currentRow);
-        row.getCell(1).value = faculty.name;
+        row.getCell(1).value = (faculty.name || "").toUpperCase();
         row.getCell(2).value = rank;
         row.getCell(3).value = targetValue;
         row.getCell(4).value = Number(acc.q1 || 0);
@@ -616,7 +657,10 @@ async function exportManualAccomplishmentsToExcel(academicYear, semester) {
           if (Array.isArray(parsed)) {
             formattedExtensionists = parsed.map(g => {
               // Handle both the old string format and the new object format
-              const memberNames = g.members.map(m => typeof m === 'object' ? m.name : m).filter(n => n && n.trim() !== '');
+              const memberNames = g.members.map(m => {
+                const nameStr = typeof m === 'object' ? m.name : m;
+                return (nameStr || "").toUpperCase();
+              }).filter(n => n && n.trim() !== '');
               return `${g.role}:\n` + memberNames.join('\n');
             }).join('\n\n');
           }
