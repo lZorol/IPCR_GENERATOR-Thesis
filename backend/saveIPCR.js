@@ -20,7 +20,7 @@ const categoryMap = {
   tos: "TOS",
   testQuestions: "Test Questions",
   attendanceSheet: "Attendance Sheet",
-  classRecord: "Class Record",
+  classRecord: "Class Records",
   classroomObservation: "Classroom Observation",
   evaluationOfTeachingEffectiveness: "Evaluation of Teaching Effectiveness",
   accomplishmentReport: "Accomplishment Report",
@@ -36,7 +36,7 @@ const categoryKeyMap = {
   TOS: "tos",
   "Test Questions": "testQuestions",
   "Attendance Sheet": "attendanceSheet",
-  "Class Record": "classRecord",
+  "Class Records": "classRecord",
   "Classroom Observation": "classroomObservation",
   "Evaluation of Teaching Effectiveness": "evaluationOfTeachingEffectiveness",
   "Accomplishment Report": "accomplishmentReport",
@@ -124,9 +124,9 @@ async function saveIPCR(userId, category, accomplished, target = null, academicY
     `;
 
     const params = [
-      uid, dbCategory, year, sem, 
-      result.target, result.accomplished, 
-      result.Q, result.E, result.T, rating, 
+      uid, dbCategory, year, sem,
+      result.target, result.accomplished,
+      result.Q, result.E, result.T, rating,
       start_date, end_date
     ];
 

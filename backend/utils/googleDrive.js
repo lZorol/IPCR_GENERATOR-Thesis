@@ -132,7 +132,7 @@ class GoogleDriveService {
   async ensureCategoryFolders(facultyFolderId) {
     const categories = [
       'Syllabus', 'Course Guide', 'SLM', 'Community Immersion', 'Grading Sheet', 'TOS',
-      'Attendance Sheet', 'Class Record', 'Evaluation of Teaching Effectiveness',
+      'Attendance Sheet', 'Class Records', 'Evaluation of Teaching Effectiveness',
       'Classroom Observation', 'Test Questions', 'Answer Keys',
       'Faculty and Students Seek Advices', 'Accomplishment Report (Instruction)',
       'R&D Proposal', 'Research Implemented', 'Research Presented',

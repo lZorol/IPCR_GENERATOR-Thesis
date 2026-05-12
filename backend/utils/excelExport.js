@@ -88,7 +88,7 @@ const DB_CATEGORY_TO_KEY = {
   TOS: "tos",
   "Grading Sheet": "gradingSheet",
   "Attendance Sheet": "attendanceSheet",
-  "Class Record": "classRecord",
+  "Class Records": "classRecord",
   "Evaluation of Teaching Effectiveness": "evaluationOfTeachingEffectiveness",
   "Classroom Observation": "classroomObservation",
   "Test Questions": "testQuestions",
