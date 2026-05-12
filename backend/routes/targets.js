@@ -12,7 +12,7 @@ const KEY_TO_COL = {
   gradingSheet: 'grading_sheet',
   tos: 'tos',
   attendanceSheet: 'attendance_sheet',
-  classRecord: 'class_record',
+  classRecord: 'class_records',
   evaluationOfTeachingEffectiveness: 'evaluation_of_teaching_effectiveness',
   classroomObservation: 'classroom_observation',
   testQuestions: 'test_questions',

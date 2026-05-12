@@ -99,7 +99,7 @@ const DashboardPage = ({
       const EXT = safeAverage(EXT_KEYS.map((k) => getRating(ipcrData[k])));
       const SUPT = safeAverage(SUPT_KEYS.map((k) => getRating(ipcrData[k])));
 
-      // Using the official 72/4/4/20 distribution from the Excel Template
+      // Using the official 72/4/4/20 distribution
       const final = (INS * 0.72) + (RES * 0.04) + (EXT * 0.04) + (SUPT * 0.20);
       return final.toFixed(2);
     } catch {
