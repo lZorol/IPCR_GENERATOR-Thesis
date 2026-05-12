@@ -23,7 +23,7 @@ const categoryMap = {
   classRecord: "Class Records",
   classroomObservation: "Classroom Observation",
   evaluationOfTeachingEffectiveness: "Evaluation of Teaching Effectiveness",
-  accomplishmentReport: "Accomplishment Report",
+  accomplishmentReport: "Accomplishment Report (Instruction)",
 };
 
 // Reverse map (DB name → key) for computeCategory
@@ -39,7 +39,7 @@ const categoryKeyMap = {
   "Class Records": "classRecord",
   "Classroom Observation": "classroomObservation",
   "Evaluation of Teaching Effectiveness": "evaluationOfTeachingEffectiveness",
-  "Accomplishment Report": "accomplishmentReport",
+  "Accomplishment Report (Instruction)": "accomplishmentReport",
 };
 
 /**

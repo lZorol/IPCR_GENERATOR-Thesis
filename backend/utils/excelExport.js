@@ -94,7 +94,7 @@ const DB_CATEGORY_TO_KEY = {
   "Test Questions": "testQuestions",
   "Answer Keys": "answerKeys",
   "Faculty and Students Seek Advices": "facultyAndStudentsSeekAdvices",
-  "Accomplishment Report": "accomplishmentReport",
+  "Accomplishment Report (Instruction)": "accomplishmentReport",
   "R&D Proposal": "randdProposal",
   "Research Implemented": "researchImplemented",
   "Research Presented": "researchPresented",
