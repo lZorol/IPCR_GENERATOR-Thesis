@@ -131,16 +131,16 @@ class GoogleDriveService {
    */
   async ensureCategoryFolders(facultyFolderId) {
     const categories = [
-      'Syllabus', 'Course Guide', 'SLM', 'Grading Sheet', 'TOS',
+      'Syllabus', 'Course Guide', 'SLM', 'Community Immersion', 'Grading Sheet', 'TOS',
       'Attendance Sheet', 'Class Record', 'Evaluation of Teaching Effectiveness',
       'Classroom Observation', 'Test Questions', 'Answer Keys',
-      'Faculty and Students Seek Advices', 'Accomplishment Report',
+      'Faculty and Students Seek Advices', 'Accomplishment Report (Instruction)',
       'R&D Proposal', 'Research Implemented', 'Research Presented',
       'Research Published', 'Intellectual Property Rights',
       'Research Utilized/Developed', 'Number of Citations',
       'Extension Proposal', 'Persons Trained', 'Person Service Rating',
       'Person Given Training', 'Technical Advice',
-      'Accomplishment Report Support', 'Attendance Flag Ceremony',
+      'Accomplishment Report (Support)', 'Attendance Flag Ceremony',
       'Attendance Flag Lowering', 'Attendance Health and Wellness Program',
       'Attendance School Celebrations', 'Training/Seminar/Conference Certificate',
       'Attendance Faculty Meeting', 'Attendance ISO and Related Activities',
@@ -152,8 +152,7 @@ class GoogleDriveService {
 
     await Promise.all(categories.map(async (cat) => {
       const folder = await this.findOrCreateFolder(cat, facultyFolderId);
-      const key = cat.replace(/\s+/g, '').toLowerCase();
-      categoryFolderLinks[key] = folder.webViewLink || `https://drive.google.com/drive/folders/${folder.id}`;
+      categoryFolderLinks[cat] = folder.webViewLink || `https://drive.google.com/drive/folders/${folder.id}`;
       categoryFolders[cat] = folder;
     }));
 

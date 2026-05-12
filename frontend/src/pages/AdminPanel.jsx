@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Save, Calendar, CheckCircle, ChevronDown, ChevronUp, ExternalLink, FileText, FolderOpen, Loader2, Download } from 'lucide-react';
-import { API_URL } from '../constants';
+import { FolderOpen, ExternalLink, Mail, Building2, User, ChevronRight, Search, Filter, Download, Save, Calendar, CheckCircle, ChevronDown, ChevronUp, FileText, Loader2 } from 'lucide-react';
+import { CATEGORY_NAMES, API_URL } from '../constants';
 
 const AdminPanel = ({ currentUser, adminData, selectedYear, selectedSemester, onConfigSaved, availableYears = [], availableSemesters = [] }) => {
   const [configSemester, setConfigSemester] = useState(selectedSemester || availableSemesters[0] || '');
@@ -128,14 +128,6 @@ const AdminPanel = ({ currentUser, adminData, selectedYear, selectedSemester, on
     (faculty.department || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const folderLabels = {
-    syllabus: 'Syllabus',
-    courseGuide: 'Course Guide',
-    slm: 'SLM',
-    gradingSheet: 'Grading Sheet',
-    tos: 'TOS',
-  };
-
   return (
     <div className="space-y-16 py-6 max-w-6xl mx-auto">
       {/* 1. CONFIGURATION SECTION */}
@@ -246,8 +238,8 @@ const AdminPanel = ({ currentUser, adminData, selectedYear, selectedSemester, on
                                <div>
                                 <h4 className="text-xs font-semibold text-gray-900 uppercase tracking-widest mb-4 flex items-center gap-2"><FolderOpen className="w-3.5 h-3.5" /> Drive Repositories</h4>
                                 <div className="space-y-2">
-                                  {Object.entries(folderLabels).map(([key, label]) => {
-                                    const link = facultyDetail.folderLinks?.[key];
+                                  {Object.entries(facultyDetail.folderLinks || {}).map(([key, link]) => {
+                                    const label = CATEGORY_NAMES[key] || key;
                                     return link ? (
                                       <a key={key} href={link} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-md hover:border-gray-400 transition-colors group">
                                         <span className="text-sm font-medium text-gray-700">{label}</span>
@@ -255,6 +247,9 @@ const AdminPanel = ({ currentUser, adminData, selectedYear, selectedSemester, on
                                       </a>
                                     ) : null;
                                   })}
+                                  {Object.keys(facultyDetail.folderLinks || {}).length === 0 && (
+                                    <p className="text-xs text-gray-400 italic">No drive folders created yet.</p>
+                                  )}
                                 </div>
                               </div>
                               <div>

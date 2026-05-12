@@ -874,8 +874,7 @@ app.post("/api/documents/upload", upload.array("files"), async (req, res) => {
 
         // Store folder link
         if (driveResult && driveResult.categoryFolderLinks) {
-          const catKey = dbCategory.replace(/\s+/g, '').toLowerCase();
-          const folderLink = driveResult.categoryFolderLinks[catKey] || null;
+          const folderLink = driveResult.categoryFolderLinks[dbCategory] || null;
           if (folderLink) {
             await new Promise((resolve) => {
               db.run(
@@ -1246,11 +1245,9 @@ app.get("/api/admin/faculty/:userId", async (req, res) => {
       );
     });
 
-    // Map DB category names to keys
-    const categoryKeyMap = { Syllabus: 'syllabus', 'Course Guide': 'courseGuide', SLM: 'slm', 'Grading Sheet': 'gradingSheet', TOS: 'tos', attendanceSheet: 'attendanceSheet', classRecord: 'classRecord', evaluationOfTeachingEffectiveness: 'evaluationOfTeachingEffectiveness', classroomObservation: 'classroomObservation', testQuestions: 'testQuestions', answerKeys: 'answerKeys', facultyAndStudentsSeekAdvices: 'facultyAndStudentsSeekAdvices', accomplishmentReport: 'accomplishmentReport', randdProposal: 'randdProposal', researchImplemented: 'researchImplemented', researchPresented: 'researchPresented', researchPublished: 'researchPublished', intellectualPropertyRights: 'intellectualPropertyRights', researchUtilizedDeveloped: 'researchUtilizedDeveloped', numberOfCitations: 'numberOfCitations', extentionProposal: 'extentionProposal', personsTrained: 'personsTrained', personServiceRating: 'personServiceRating', personGivenTraining: 'personGivenTraining', technicalAdvice: 'technicalAdvice', attendanceFlagCeremony: 'attendanceFlagCeremony', attendanceFlagLowering: 'attendanceFlagLowering', attendanceHealthAndWellnessProgram: 'attendanceHealthAndWellnessProgram', attendanceSchoolCelebrations: 'attendanceSchoolCelebrations', trainingSeminarConferenceCertificate: 'trainingSeminarConferenceCertificate', atttendanceFacultyMeeting: 'atttendanceFacultyMeeting', attendanceISOAndRelatedActivities: 'attendanceISOAndRelatedActivities', attendaceSpiritualActivities: 'attendaceSpiritualActivities' };
     const folderLinks = {};
     folderLinkRows.forEach(row => {
-      const key = categoryKeyMap[row.category];
+      const key = Object.keys(categoryMap).find(k => categoryMap[k] === row.category);
       if (key) folderLinks[key] = row.folder_link;
     });
 
@@ -1269,41 +1266,7 @@ app.get("/api/admin/faculty/:userId", async (req, res) => {
 
     res.json({
       profile,
-      folderLinks: {
-        syllabus: folderLinks.syllabus || null,
-        courseGuide: folderLinks.courseGuide || null,
-        slm: folderLinks.slm || null,
-        gradingSheet: folderLinks.gradingSheet || null,
-        tos: folderLinks.tos || null,
-        attendanceSheet: folderLinks.attendanceSheet || null,
-        classRecord: folderLinks.classRecord || null,
-        evaluationOfTeachingEffectiveness: folderLinks.evaluationOfTeachingEffectiveness || null,
-        classroomObservation: folderLinks.classroomObservation || null,
-        testQuestions: folderLinks.testQuestions || null,
-        answerKeys: folderLinks.answerKeys || null,
-        facultyAndStudentsSeekAdvices: folderLinks.facultyAndStudentsSeekAdvices || null,
-        accomplishmentReport: folderLinks.accomplishmentReport || null,
-        randdProposal: folderLinks.randdProposal || null,
-        researchImplemented: folderLinks.researchImplemented || null,
-        researchPresented: folderLinks.researchPresented || null,
-        researchPublished: folderLinks.researchPublished || null,
-        intellectualPropertyRights: folderLinks.intellectualPropertyRights || null,
-        researchUtilizedDeveloped: folderLinks.researchUtilizedDeveloped || null,
-        numberOfCitations: folderLinks.numberOfCitations || null,
-        extentionProposal: folderLinks.extentionProposal || null,
-        personsTrained: folderLinks.personsTrained || null,
-        personServiceRating: folderLinks.personServiceRating || null,
-        personGivenTraining: folderLinks.personGivenTraining || null,
-        technicalAdvice: folderLinks.technicalAdvice || null,
-        attendanceFlagCeremony: folderLinks.attendanceFlagCeremony || null,
-        attendanceFlagLowering: folderLinks.attendanceFlagLowering || null,
-        attendanceHealthAndWellnessProgram: folderLinks.attendanceHealthAndWellnessProgram || null,
-        attendanceSchoolCelebrations: folderLinks.attendanceSchoolCelebrations || null,
-        trainingSeminarConferenceCertificate: folderLinks.trainingSeminarConferenceCertificate || null,
-        atttendanceFacultyMeeting: folderLinks.atttendanceFacultyMeeting || null,
-        attendanceISOAndRelatedActivities: folderLinks.attendanceISOAndRelatedActivities || null,
-        attendaceSpiritualActivities: folderLinks.attendaceSpiritualActivities || null,
-      },
+      folderLinks,
       documents,
     });
   } catch (error) {
