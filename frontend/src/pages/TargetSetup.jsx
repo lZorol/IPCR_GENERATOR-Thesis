@@ -33,10 +33,7 @@ const GROUPS = {
   instruction: CATEGORY_GROUPS.instruction,
   research: CATEGORY_GROUPS.research,
   extension: CATEGORY_GROUPS.extension,
-  supportFunction: [
-    "accomplishmentReportSupport",
-    ...CATEGORY_GROUPS.supportFunction,
-  ],
+  supportFunction: CATEGORY_GROUPS.supportFunction,
 };
 
 const TargetSetup = ({ user, selectedYear, selectedSemester, onTargetsSaved, availableYears = [], availableSemesters = [] }) => {

@@ -16,18 +16,15 @@ const AdminPanel = ({ currentUser, adminData, selectedYear, selectedSemester, on
   // --- 🟢 WEIGHTED RATING LOGIC (MATCHES DASHBOARD) ---
   
   const calculateRating = (target, accomplished) => {
-    if (!target || target === 0) return 0;
-    const ratio = accomplished / target;
-    if (ratio >= 1.0) return 5;
-    if (ratio >= 0.8) return 4;
-    if (ratio >= 0.6) return 3;
-    if (ratio >= 0.4) return 2;
-    return 1;
+    if (!target || target === 0) return 1;
+    const rawRating = (accomplished / target) * 5;
+    const finalRating = Math.max(1, Math.min(5, rawRating));
+    return parseFloat(finalRating.toFixed(2));
   };
 
   const safeAverage = (arr) => {
     const valid = arr.filter((v) => typeof v === "number" && !isNaN(v));
-    if (valid.length === 0) return 0;
+    if (valid.length === 0) return 1;
     return valid.reduce((a, b) => a + b, 0) / valid.length;
   };
 
@@ -38,9 +35,9 @@ const AdminPanel = ({ currentUser, adminData, selectedYear, selectedSemester, on
   };
 
   const computeOverallRating = (ipcrData) => {
-    if (!ipcrData) return "0.00";
+    if (!ipcrData) return "1.00";
     try {
-      const INS_KEYS = ["syllabus", "courseGuide", "slm", "attendanceSheet", "classRecord", "evaluationOfTeachingEffectiveness", "classroomObservation", "tos", "testQuestions", "answerKeys", "gradingSheet", "facultyAndStudentsSeekAdvices", "accomplishmentReport"];
+      const INS_KEYS = ["syllabus", "courseGuide", "slm", "communityImmersion", "attendanceSheet", "classRecord", "evaluationOfTeachingEffectiveness", "classroomObservation", "tos", "testQuestions", "answerKeys", "gradingSheet", "facultyAndStudentsSeekAdvices", "accomplishmentReport"];
       const RES_KEYS = ["randdProposal", "researchImplemented", "researchPresented", "researchPublished", "intellectualPropertyRights", "researchUtilizedDeveloped", "numberOfCitations"];
       const EXT_KEYS = ["extentionProposal", "personsTrained", "personServiceRating", "personGivenTraining", "technicalAdvice"];
       const SUPT_KEYS = ["accomplishmentReportSupport", "attendanceFlagCeremony", "attendanceFlagLowering", "attendanceHealthAndWellnessProgram", "attendanceSchoolCelebrations", "trainingSeminarConferenceCertificate", "atttendanceFacultyMeeting", "attendanceISOAndRelatedActivities", "attendaceSpiritualActivities"];
@@ -50,11 +47,10 @@ const AdminPanel = ({ currentUser, adminData, selectedYear, selectedSemester, on
       const EXT = safeAverage(EXT_KEYS.map((k) => getRating(ipcrData[k])));
       const SUPT = safeAverage(SUPT_KEYS.map((k) => getRating(ipcrData[k])));
 
-      // Applying the 72/4/4/20 weight
       const final = (INS * 0.72) + (RES * 0.04) + (EXT * 0.04) + (SUPT * 0.20);
       return final.toFixed(2);
     } catch (e) {
-      return "0.00";
+      return "1.00";
     }
   };
 
@@ -209,8 +205,8 @@ const AdminPanel = ({ currentUser, adminData, selectedYear, selectedSemester, on
             <tbody className="divide-y divide-gray-100">
               {filteredData.map((faculty, index) => {
                 
-                // ✅ REPLACED: Use computeOverallRating instead of avg_rating
-                const overallRating = computeOverallRating(faculty.ipcrData);
+                // ✅ Use the pre-calculated overallRating from the backend
+                const overallRating = faculty.overallRating || computeOverallRating(faculty.ipcrData);
 
                 return (
                   <React.Fragment key={faculty.id || index}>

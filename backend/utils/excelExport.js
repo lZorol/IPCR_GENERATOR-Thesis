@@ -107,7 +107,7 @@ const DB_CATEGORY_TO_KEY = {
   "Person Service Rating": "personServiceRating",
   "Person Given Training": "personGivenTraining",
   "Technical Advice": "technicalAdvice",
-  "Accomplishment Report Support": "accomplishmentReportSupport",
+  "Accomplishment Report (Support)": "accomplishmentReportSupport",
   "Attendance Flag Ceremony": "attendanceFlagCeremony",
   "Attendance Flag Lowering": "attendanceFlagLowering",
   "Attendance Health and Wellness Program": "attendanceHealthAndWellnessProgram",
@@ -139,10 +139,12 @@ async function exportIPCRToExcel(userId, academicYear, semester) {
   const activeSem = semester || config.semester;
 
   // 2. FETCH DATA IN PARALLEL
-  const [user, records, userTargetRow] = await Promise.all([
+  const [user, records, userTargetRow, summaries, docLinks] = await Promise.all([
     new Promise(res => db.get(`SELECT u.*, COALESCE(up.name, u.name) as display_name, COALESCE(up.department, u.department) as display_department, up.position FROM users u LEFT JOIN user_profiles up ON u.id = up.user_id WHERE u.id = ?`, [uid], (err, row) => res(row))),
     new Promise(res => db.all(`SELECT * FROM ipcr_records WHERE user_id = ? AND academic_year = ? AND semester = ?`, [uid, activeYear, activeSem], (err, rows) => res(rows || []))),
-    new Promise(res => db.get(`SELECT * FROM user_targets WHERE user_id = ? AND academic_year = ? AND semester = ?`, [uid, activeYear, activeSem], (err, row) => res(row)))
+    new Promise(res => db.get(`SELECT * FROM user_targets WHERE user_id = ? AND academic_year = ? AND semester = ?`, [uid, activeYear, activeSem], (err, row) => res(row))),
+    new Promise(res => db.get(`SELECT overall_rating FROM ipcr_summaries WHERE user_id = ? AND academic_year = ? AND semester = ?`, [uid, activeYear, activeSem], (err, row) => res(row))),
+    new Promise(res => db.all(`SELECT category, google_drive_link FROM documents WHERE user_id = ? AND academic_year = ? AND semester = ? GROUP BY category`, [uid, activeYear, activeSem], (err, rows) => res(rows || [])))
   ]);
 
   // Index records by key
@@ -150,6 +152,13 @@ async function exportIPCRToExcel(userId, academicYear, semester) {
   records.forEach(r => {
     const key = DB_CATEGORY_TO_KEY[r.category];
     if (key) recordsByKey[key] = r;
+  });
+
+  // Index doc links by key
+  const linksByKey = {};
+  docLinks.forEach(dl => {
+    const key = DB_CATEGORY_TO_KEY[dl.category];
+    if (key) linksByKey[key] = dl.google_drive_link;
   });
 
   // 3. SET METADATA
@@ -216,14 +225,26 @@ async function exportIPCRToExcel(userId, academicYear, semester) {
     }
 
     if (map.submissionDate) worksheet.getCell(map.submissionDate).value = r?.submission_date || "";
-    if (map.folderLink) worksheet.getCell(map.folderLink).value = r?.folder_link || "";
+    
+    // Fill GDrive Link (Priority: documents table > existing link)
+    const folderLink = linksByKey[key] || r?.folder_link || "";
+    if (map.folderLink) worksheet.getCell(map.folderLink).value = folderLink;
   });
 
-  // 5. FINAL RATING FORMULA
-  worksheet.getCell("H85").value = {
-    formula: 'IFERROR((AVERAGE(I19:I22,I24:I25,I27:I28,I30:I32,I34,I36,I38))*INS+(AVERAGE(I41:I47))*RES+(AVERAGE(I50:I54))*EXT+(AVERAGE(I57,I59,I61,I63,I65,I67,I69,I71,I73))*SUPT+IFERROR((AVERAGE(I76:I83))*DGT,0),"")',
-  };
-  worksheet.getCell("H85").result = null;
+  // 5. FINAL RATING (Source of Truth)
+  // We use the formula from the template as requested, but update the fallback to match 72/4/4/20
+  if (summaries && summaries.overall_rating) {
+    // We still write the result for display, but keep the formula capability if template allows
+    worksheet.getCell("H85").value = {
+      formula: 'IFERROR((AVERAGE(I19:I22,I24:I25,I27:I28,I30:I32,I34,I36,I38))*0.72+(AVERAGE(I41:I47))*0.04+(AVERAGE(I50:I54))*0.04+(AVERAGE(I57,I59,I61,I63,I65,I67,I69,I71,I73))*0.20, 1.00)',
+    };
+  } else {
+    // Original template formula using named ranges
+    worksheet.getCell("H85").value = {
+      formula: 'IFERROR((AVERAGE(I19:I22,I24:I25,I27:I28,I30:I32,I34,I36,I38))*INS+(AVERAGE(I41:I47))*RES+(AVERAGE(I50:I54))*EXT+(AVERAGE(I57,I59,I61,I63,I65,I67,I69,I71,I73))*SUPT+IFERROR((AVERAGE(I76:I83))*DGT,0),"")',
+    };
+  }
+  worksheet.getCell("H85").result = summaries?.overall_rating || null;
 
   // ---------------------------------------------------------
   // FINAL CELL OVERRIDES (MUST BE PLACED IMMEDIATELY BEFORE writeBuffer)
@@ -231,7 +252,7 @@ async function exportIPCRToExcel(userId, academicYear, semester) {
   const fetchedUserName = (user?.display_name || user?.name || 'Name Not Found in DB').toUpperCase();
 
   // 1. Dynamic Commitment Statement (Cell A7)
-  worksheet.getCell('A7').value = `following in accordance with the indicated measures for the ${semester} of Academic Year ${academicYear}`;
+  worksheet.getCell('A7').value = `following in accordance with the indicated measures for the ${activeSem} of Academic Year ${activeYear}`;
 
   // 2. User Name in Header (Cell A13)
   worksheet.getCell('A13').value = fetchedUserName;

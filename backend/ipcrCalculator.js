@@ -33,17 +33,17 @@ const CATEGORY_GROUPS = {
     'extentionProposal', 'personsTrained', 'personServiceRating', 'personGivenTraining', 'technicalAdvice'
   ],
   support: [
-    'attendanceFlagCeremony', 'attendanceFlagLowering', 'attendanceHealthAndWellnessProgram',
+    'accomplishmentReportSupport', 'attendanceFlagCeremony', 'attendanceFlagLowering', 'attendanceHealthAndWellnessProgram',
     'attendanceSchoolCelebrations', 'trainingSeminarConferenceCertificate', 'atttendanceFacultyMeeting',
     'attendanceISOAndRelatedActivities', 'attendaceSpiritualActivities'
   ]
 };
 
 const GROUP_WEIGHTS = {
-  instruction: 0.45,
-  research: 0.25,
-  extension: 0.20,
-  support: 0.10
+  instruction: 0.72,
+  research: 0.04,
+  extension: 0.04,
+  support: 0.20
 };
 
 /**
@@ -110,18 +110,17 @@ function calculateOverallRating(ipcrData) {
   for (const [group, categories] of Object.entries(CATEGORY_GROUPS)) {
     const groupWeight = GROUP_WEIGHTS[group] || 0;
     
-    // Get ratings for categories in this group that exist in ipcrData
-    const groupRatings = categories
-      .map(cat => ipcrData[cat]?.rating)
-      .filter(rating => rating !== undefined && rating !== null);
+    // Get ratings for all categories in this group, defaulting to 1.0 if missing
+    const groupRatings = categories.map(cat => {
+      const r = ipcrData[cat]?.rating;
+      return (r != null && r > 0) ? Number(r) : 1.0;
+    });
 
-    if (groupRatings.length > 0) {
-      const groupAverage = groupRatings.reduce((sum, r) => sum + r, 0) / groupRatings.length;
-      totalWeightedRating += groupAverage * groupWeight;
-    }
+    const groupAverage = groupRatings.reduce((sum, r) => sum + r, 0) / groupRatings.length;
+    totalWeightedRating += groupAverage * groupWeight;
   }
 
-  // Handle the case where no ratings exist
+  // Final rounding to match Excel H85
   return Number(totalWeightedRating.toFixed(2)) || 1.0;
 }
 
@@ -152,7 +151,7 @@ const categoryMap = {
   personServiceRating: "Person Service Rating",
   personGivenTraining: "Person Given Training",
   technicalAdvice: "Technical Advice",
-  accomplishmentReportSupport: "Accomplishment Report Support",
+  accomplishmentReportSupport: "Accomplishment Report (Support)",
   attendanceFlagCeremony: "Attendance Flag Ceremony",
   attendanceFlagLowering: "Attendance Flag Lowering",
   attendanceHealthAndWellnessProgram: "Attendance Health and Wellness Program",

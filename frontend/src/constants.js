@@ -27,6 +27,7 @@ export const CATEGORY_NAMES = {
   personServiceRating: 'Person Service Rating',
   personGivenTraining: 'Person Given Training',
   technicalAdvice: 'Technical Advice',
+  accomplishmentReportSupport: 'Accomplishment Report (Support)',
   attendanceFlagCeremony: 'Attendance Flag Ceremony',
   attendanceFlagLowering: 'Attendance Flag Lowering',
   attendanceHealthAndWellnessProgram: 'Attendance Health and Wellness Program',
@@ -53,10 +54,17 @@ export const CATEGORY_GROUPS = {
     'extentionProposal', 'personsTrained', 'personServiceRating', 'personGivenTraining', 'technicalAdvice'
   ],
   supportFunction: [
-    'attendanceFlagCeremony', 'attendanceFlagLowering', 'attendanceHealthAndWellnessProgram',
+    'accomplishmentReportSupport', 'attendanceFlagCeremony', 'attendanceFlagLowering', 'attendanceHealthAndWellnessProgram',
     'attendanceSchoolCelebrations', 'trainingSeminarConferenceCertificate', 'atttendanceFacultyMeeting',
     'attendanceISOAndRelatedActivities', 'attendaceSpiritualActivities'
   ]
+};
+
+export const GROUPS = {
+  instruction: CATEGORY_GROUPS.instruction,
+  research: CATEGORY_GROUPS.research,
+  extension: CATEGORY_GROUPS.extension,
+  supportFunction: CATEGORY_GROUPS.supportFunction,
 };
 
 export const GROUP_NAMES = {

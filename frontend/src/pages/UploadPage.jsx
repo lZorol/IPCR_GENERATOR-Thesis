@@ -411,6 +411,7 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
                 <label className="block text-xs font-medium text-gray-500 mb-1.5 tracking-wide">Accomplishment Category *</label>
                 <select required name="accomplishment_category" value={formData.accomplishment_category} onChange={handleInputChange} className="w-full rounded-lg border-gray-300 shadow-sm focus:border-gray-400 focus:ring-gray-400 sm:text-sm p-2.5 border bg-white">
                   <option value="Seminars, Conferences, and Training">Seminars, Conferences, and Training</option>
+                  <option value="Accomplishment Report Support">Accomplishment Report Support</option>
                   <option value="Research">Research</option>
                   <option value="Extension">Extension</option>
                   <option value="List of Extension">List of Extension</option>
@@ -966,7 +967,7 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
               </p>
 
               {/* Manual Input for IPCR "if set to Auto-Detect, or manually assigned to your chosen category"*/}
-              {/*
+
               <div className="mt-6 max-w-xs mx-auto">
                 <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Categorization Mode</label>
                 <select
@@ -983,7 +984,7 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
                     ))}
                   </optgroup>
                 </select>
-              </div>*/}
+              </div>
 
               <div className="mt-8">
                 <label className="inline-block relative">

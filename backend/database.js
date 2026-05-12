@@ -13,6 +13,22 @@ const db = new sqlite3.Database(path.join(__dirname, 'ipcr.db'), (err) => {
 db.serialize(() => {
 
   /**
+   * IPCR SUMMARIES TABLE
+   * Permanent source of truth for overall ratings to prevent discrepancies.
+   */
+  db.run(`
+    CREATE TABLE IF NOT EXISTS ipcr_summaries (
+      user_id INTEGER,
+      academic_year TEXT,
+      semester TEXT,
+      overall_rating REAL,
+      last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(user_id, academic_year, semester),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `);
+
+  /**
    * USERS TABLE
    */
   db.run(`

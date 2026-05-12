@@ -89,29 +89,18 @@ const DashboardPage = ({
         "attendaceSpiritualActivities",
       ];
 
-      const DGT_KEYS = []; // (I76:I83 not implemented yet)
+      // ✅ Use the overall_rating from the API if available
+      if (ipcrData.overall_rating) return ipcrData.overall_rating.toFixed(2);
+      if (ipcrData.overallRating) return ipcrData.overallRating.toFixed(2);
 
-      // --- COMPUTE GROUP AVERAGES ---
+      // --- COMPUTE GROUP AVERAGES (Fallback) ---
       const INS = safeAverage(INS_KEYS.map((k) => getRating(ipcrData[k])));
       const RES = safeAverage(RES_KEYS.map((k) => getRating(ipcrData[k])));
       const EXT = safeAverage(EXT_KEYS.map((k) => getRating(ipcrData[k])));
       const SUPT = safeAverage(SUPT_KEYS.map((k) => getRating(ipcrData[k])));
-      const DGT = safeAverage(DGT_KEYS.map((k) => getRating(ipcrData[k])));
 
-      // ⚠️ MATCH THESE WITH YOUR EXCEL NAMED VALUES
-      const INS_W = 0.72;
-      const RES_W = 0.04;
-      const EXT_W = 0.04;
-      const SUPT_W = 0.2;
-      const DGT_W = 0;
-
-      const final =
-        INS * INS_W +
-        RES * RES_W +
-        EXT * EXT_W +
-        SUPT * SUPT_W +
-        (DGT * DGT_W || 0);
-
+      // Using the official 72/4/4/20 distribution from the Excel Template
+      const final = (INS * 0.72) + (RES * 0.04) + (EXT * 0.04) + (SUPT * 0.20);
       return final.toFixed(2);
     } catch {
       return "0.00";
