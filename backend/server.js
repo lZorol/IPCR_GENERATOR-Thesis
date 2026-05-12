@@ -86,6 +86,54 @@ function getQuarter(dateString) {
   return 4;
 }
 
+/**
+ * Re-sync the accomplished count for a specific category from source tables.
+ * This prevents the "-1" or race condition bugs.
+ */
+async function syncAccomplishedCount(userId, dbCategory, academicYear, semester) {
+  // 1. Count from documents table
+  const docCount = await new Promise((resolve) => {
+    db.get(
+      `SELECT COUNT(*) as count FROM documents 
+       WHERE user_id = ? AND category = ? AND academic_year = ? AND semester = ?`,
+      [userId, dbCategory, academicYear, semester],
+      (err, row) => resolve(row?.count || 0)
+    );
+  });
+
+  // 2. Count from faculty_accomplishments table
+  // Note: We map "Training/Seminar/Conference Certificate" back to "Seminars, Conferences, and Training"
+  const manualCategory = dbCategory === "Training/Seminar/Conference Certificate" 
+    ? "Seminars, Conferences, and Training" 
+    : dbCategory;
+
+  const manualCount = await new Promise((resolve) => {
+    db.get(
+      `SELECT COUNT(*) as count FROM faculty_accomplishments 
+       WHERE user_id = ? AND accomplishment_category = ? AND academic_year = ? AND semester = ?`,
+      [userId, manualCategory, academicYear, semester],
+      (err, row) => resolve(row?.count || 0)
+    );
+  });
+
+  const total = docCount + manualCount;
+
+  // 3. Fetch target
+  const targetRow = await new Promise((resolve) =>
+    db.get(
+      `SELECT target FROM ipcr_records 
+       WHERE user_id = ? AND category = ? AND academic_year = ? AND semester = ?`,
+      [userId, dbCategory, academicYear, semester],
+      (err, row) => resolve(row)
+    )
+  );
+  const target = targetRow?.target || 5;
+
+  // 4. Update IPCR record using saveIPCR
+  await saveIPCR(userId, dbCategory, total, target, academicYear, semester);
+  return total;
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // SEMESTER CONFIG ROUTES
 // ──────────────────────────────────────────────────────────────────────────────
@@ -424,23 +472,10 @@ app.post("/api/accomplishments/manual", upload.single("file"), async (req, res) 
           return res.status(500).json({ error: err.message });
         }
 
-        // Update IPCR record count for Training/Seminar/Conference Certificate
+        // Update IPCR record count for Training/Seminar/Conference Certificate using source of truth
         if (accomplishment_category === 'Seminars, Conferences, and Training' || !accomplishment_category) {
           const category = "Training/Seminar/Conference Certificate";
-
-          const row = await new Promise((resolve, reject) =>
-            db.get(
-              `SELECT target, accomplished FROM ipcr_records
-               WHERE user_id = ? AND category = ? AND academic_year = ? AND semester = ?`,
-              [userId, category, academicYear, semester],
-              (err, r) => (err ? reject(err) : resolve(r))
-            )
-          );
-
-          const target = row?.target || 5; 
-          const accomplished = (row?.accomplished || 0) + 1;
-
-          await saveIPCR(userId, category, accomplished, target, academicYear, semester);
+          await syncAccomplishedCount(userId, category, academicYear, semester);
         }
 
         // --- 🟢 AUTOMATED EXTENSION DISTRIBUTION ENGINE 🟢 ---
@@ -780,18 +815,8 @@ app.post("/api/documents/upload", upload.array("files"), async (req, res) => {
           );
         });
 
-        // Update IPCR record count
-        const ipcrRecord = await new Promise((resolve) =>
-          db.get(
-            `SELECT accomplished FROM ipcr_records
-             WHERE user_id = ? AND category = ? AND academic_year = ? AND semester = ?`,
-            [userId, dbCategory, academicYear, semester],
-            (err, r) => resolve(r)
-          )
-        );
-
-        const newAccomplished = (ipcrRecord?.accomplished || 0) + 1;
-        await saveIPCR(userId, dbCategory, newAccomplished, null, academicYear, semester);
+        // Update IPCR record using source of truth to avoid race conditions
+        const newAccomplished = await syncAccomplishedCount(userId, dbCategory, academicYear, semester);
 
         // Store folder link
         if (driveResult && driveResult.categoryFolderLinks) {

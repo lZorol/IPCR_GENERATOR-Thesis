@@ -203,8 +203,8 @@ const App = () => {
     let successfulUploads = 0;
     let finishedCount = 0;
 
-    // Parallelize uploads using Promise.all
-    await Promise.all(files.map(async (file) => {
+    // Process files sequentially to respect the ML lock and prevent timeouts
+    for (const file of files) {
       const formData = new FormData();
       formData.append('files', file);
       formData.append('userId', user.id);
@@ -230,7 +230,7 @@ const App = () => {
       finishedCount++;
       setProcessedFiles(finishedCount);
       setUploadProgress(Math.round((finishedCount / files.length) * 100));
-    }));
+    }
 
     setIsUploading(false);
 

@@ -109,12 +109,12 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
 
   const getQuarter = (dateString) => {
     if (!dateString) return 'q1';
-    
+
     // Extract first date if it's a range
     const cleanDate = dateString.includes(' - ') ? dateString.split(' - ')[0] : dateString;
-    
+
     let dateObj = new Date(cleanDate);
-    
+
     // Fallback for MM/DD/YYYY if standard parsing fails or is ambiguous
     if (isNaN(dateObj.getTime()) || (cleanDate.includes('/') && !cleanDate.includes('-'))) {
       const parts = cleanDate.split('/');
@@ -129,7 +129,7 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
     }
 
     if (isNaN(dateObj.getTime())) return 'q1';
-    
+
     const month = dateObj.getMonth(); // 0-indexed
     if (month <= 2) return 'q1'; // Jan, Feb, Mar
     if (month <= 5) return 'q2'; // Apr, May, Jun
@@ -851,7 +851,7 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
                                     <option value="" disabled>Select Faculty</option>
                                     {regularFaculty.map(f => {
                                       // Check if this faculty is already selected in ANY group, excluding the current member
-                                      const isAlreadySelected = extensionists.some(g => 
+                                      const isAlreadySelected = extensionists.some(g =>
                                         g.members.some(m => m.userId == f.id && m !== member)
                                       );
                                       return (

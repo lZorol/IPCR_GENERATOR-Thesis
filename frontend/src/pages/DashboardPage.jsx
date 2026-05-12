@@ -137,13 +137,12 @@ const DashboardPage = ({
             {name}
           </h3>
           <span
-            className={`text-sm font-bold px-2 py-0.5 rounded-md ${
-              rating >= 4
+            className={`text-sm font-bold px-2 py-0.5 rounded-md ${rating >= 4
                 ? "bg-green-50 text-green-700"
                 : rating >= 3
                   ? "bg-amber-50 text-amber-700"
                   : "bg-red-50 text-red-700"
-            }`}
+              }`}
           >
             {rating.toFixed(1)}
           </span>
@@ -153,7 +152,7 @@ const DashboardPage = ({
           <div className="flex items-center justify-between text-xs">
             <span className="text-gray-600 font-medium">
               <span className="text-gray-900">
-                {typeof data.accomplished === 'number' ? data.accomplished.toFixed(2) : data.accomplished}
+                {typeof data.accomplished === 'number' ? data.accomplished : data.accomplished}
               </span>{" "}
               <span className="text-gray-300 mx-1">/</span> {Math.round(data.target)} target
             </span>
@@ -166,13 +165,12 @@ const DashboardPage = ({
 
           <div className="w-full bg-gray-100/80 rounded-full h-1.5 overflow-hidden border border-gray-200/50">
             <div
-              className={`h-full transition-all duration-500 ease-out shadow-sm ${
-                rating >= 4
+              className={`h-full transition-all duration-500 ease-out shadow-sm ${rating >= 4
                   ? "bg-gradient-to-r from-gray-700 to-gray-900"
                   : rating >= 3
                     ? "bg-gradient-to-r from-gray-400 to-gray-600"
                     : "bg-gradient-to-r from-gray-200 to-gray-400"
-              }`}
+                }`}
               style={{
                 width: `${Math.min((data.accomplished / (data.target || 1)) * 100, 100)}%`,
               }}
@@ -214,11 +212,10 @@ const DashboardPage = ({
                   <td className="py-4 px-4 text-center text-sm text-gray-500">{(item.data.qle || item.rating).toFixed(2)}</td>
                   <td className="py-4 px-4 text-center text-sm text-gray-500">{(item.data.timeliness || item.rating).toFixed(2)}</td>
                   <td className="py-4 px-4 text-center">
-                    <span className={`text-sm font-bold px-2 py-1 rounded-md ${
-                      item.rating >= 4 ? "bg-green-50 text-green-700" :
-                      item.rating >= 3 ? "bg-amber-50 text-amber-700" :
-                      "bg-red-50 text-red-700"
-                    }`}>
+                    <span className={`text-sm font-bold px-2 py-1 rounded-md ${item.rating >= 4 ? "bg-green-50 text-green-700" :
+                        item.rating >= 3 ? "bg-amber-50 text-amber-700" :
+                          "bg-red-50 text-red-700"
+                      }`}>
                       {item.rating.toFixed(2)}
                     </span>
                   </td>
