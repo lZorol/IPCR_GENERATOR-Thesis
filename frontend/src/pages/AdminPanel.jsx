@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Save, Calendar, CheckCircle, ChevronDown, ChevronUp, ExternalLink, FileText, FolderOpen, Loader2, Download } from 'lucide-react';
-import { API_URL } from '../constants';
+import { FolderOpen, ExternalLink, Mail, Building2, User, ChevronRight, Search, Filter, Download, Save, Calendar, CheckCircle, ChevronDown, ChevronUp, FileText, Loader2 } from 'lucide-react';
+import { CATEGORY_NAMES, API_URL } from '../constants';
 
 const AdminPanel = ({ currentUser, adminData, selectedYear, selectedSemester, onConfigSaved, availableYears = [], availableSemesters = [] }) => {
   const [configSemester, setConfigSemester] = useState(selectedSemester || availableSemesters[0] || '');
@@ -16,18 +16,15 @@ const AdminPanel = ({ currentUser, adminData, selectedYear, selectedSemester, on
   // --- 🟢 WEIGHTED RATING LOGIC (MATCHES DASHBOARD) ---
   
   const calculateRating = (target, accomplished) => {
-    if (!target || target === 0) return 0;
-    const ratio = accomplished / target;
-    if (ratio >= 1.0) return 5;
-    if (ratio >= 0.8) return 4;
-    if (ratio >= 0.6) return 3;
-    if (ratio >= 0.4) return 2;
-    return 1;
+    if (!target || target === 0) return 1;
+    const rawRating = (accomplished / target) * 5;
+    const finalRating = Math.max(1, Math.min(5, rawRating));
+    return parseFloat(finalRating.toFixed(2));
   };
 
   const safeAverage = (arr) => {
     const valid = arr.filter((v) => typeof v === "number" && !isNaN(v));
-    if (valid.length === 0) return 0;
+    if (valid.length === 0) return 1;
     return valid.reduce((a, b) => a + b, 0) / valid.length;
   };
 
@@ -38,9 +35,9 @@ const AdminPanel = ({ currentUser, adminData, selectedYear, selectedSemester, on
   };
 
   const computeOverallRating = (ipcrData) => {
-    if (!ipcrData) return "0.00";
+    if (!ipcrData) return "1.00";
     try {
-      const INS_KEYS = ["syllabus", "courseGuide", "slm", "attendanceSheet", "classRecord", "evaluationOfTeachingEffectiveness", "classroomObservation", "tos", "testQuestions", "answerKeys", "gradingSheet", "facultyAndStudentsSeekAdvices", "accomplishmentReport"];
+      const INS_KEYS = ["syllabus", "courseGuide", "slm", "communityImmersion", "attendanceSheet", "classRecord", "evaluationOfTeachingEffectiveness", "classroomObservation", "tos", "testQuestions", "answerKeys", "gradingSheet", "facultyAndStudentsSeekAdvices", "accomplishmentReport"];
       const RES_KEYS = ["randdProposal", "researchImplemented", "researchPresented", "researchPublished", "intellectualPropertyRights", "researchUtilizedDeveloped", "numberOfCitations"];
       const EXT_KEYS = ["extentionProposal", "personsTrained", "personServiceRating", "personGivenTraining", "technicalAdvice"];
       const SUPT_KEYS = ["accomplishmentReportSupport", "attendanceFlagCeremony", "attendanceFlagLowering", "attendanceHealthAndWellnessProgram", "attendanceSchoolCelebrations", "trainingSeminarConferenceCertificate", "atttendanceFacultyMeeting", "attendanceISOAndRelatedActivities", "attendaceSpiritualActivities"];
@@ -50,11 +47,10 @@ const AdminPanel = ({ currentUser, adminData, selectedYear, selectedSemester, on
       const EXT = safeAverage(EXT_KEYS.map((k) => getRating(ipcrData[k])));
       const SUPT = safeAverage(SUPT_KEYS.map((k) => getRating(ipcrData[k])));
 
-      // Applying the 72/4/4/20 weight
       const final = (INS * 0.72) + (RES * 0.04) + (EXT * 0.04) + (SUPT * 0.20);
       return final.toFixed(2);
     } catch (e) {
-      return "0.00";
+      return "1.00";
     }
   };
 
@@ -132,14 +128,6 @@ const AdminPanel = ({ currentUser, adminData, selectedYear, selectedSemester, on
     (faculty.department || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const folderLabels = {
-    syllabus: 'Syllabus',
-    courseGuide: 'Course Guide',
-    slm: 'SLM',
-    gradingSheet: 'Grading Sheet',
-    tos: 'TOS',
-  };
-
   return (
     <div className="space-y-16 py-6 max-w-6xl mx-auto">
       {/* 1. CONFIGURATION SECTION */}
@@ -209,8 +197,8 @@ const AdminPanel = ({ currentUser, adminData, selectedYear, selectedSemester, on
             <tbody className="divide-y divide-gray-100">
               {filteredData.map((faculty, index) => {
                 
-                // ✅ REPLACED: Use computeOverallRating instead of avg_rating
-                const overallRating = computeOverallRating(faculty.ipcrData);
+                // ✅ Use the pre-calculated overallRating from the backend
+                const overallRating = faculty.overallRating || computeOverallRating(faculty.ipcrData);
 
                 return (
                   <React.Fragment key={faculty.id || index}>
@@ -250,8 +238,8 @@ const AdminPanel = ({ currentUser, adminData, selectedYear, selectedSemester, on
                                <div>
                                 <h4 className="text-xs font-semibold text-gray-900 uppercase tracking-widest mb-4 flex items-center gap-2"><FolderOpen className="w-3.5 h-3.5" /> Drive Repositories</h4>
                                 <div className="space-y-2">
-                                  {Object.entries(folderLabels).map(([key, label]) => {
-                                    const link = facultyDetail.folderLinks?.[key];
+                                  {Object.entries(facultyDetail.folderLinks || {}).map(([key, link]) => {
+                                    const label = CATEGORY_NAMES[key] || key;
                                     return link ? (
                                       <a key={key} href={link} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-md hover:border-gray-400 transition-colors group">
                                         <span className="text-sm font-medium text-gray-700">{label}</span>
@@ -259,6 +247,9 @@ const AdminPanel = ({ currentUser, adminData, selectedYear, selectedSemester, on
                                       </a>
                                     ) : null;
                                   })}
+                                  {Object.keys(facultyDetail.folderLinks || {}).length === 0 && (
+                                    <p className="text-xs text-gray-400 italic">No drive folders created yet.</p>
+                                  )}
                                 </div>
                               </div>
                               <div>

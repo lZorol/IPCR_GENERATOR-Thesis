@@ -134,6 +134,50 @@ async function syncAccomplishedCount(userId, dbCategory, academicYear, semester)
   return total;
 }
 
+/**
+ * Syncs the overall rating for a user to the ipcr_summaries table.
+ */
+async function syncOverallRating(userId, academicYear, semester) {
+  const { calculateOverallRating, categoryMap } = require('./ipcrCalculator');
+  
+  const rows = await new Promise((resolve) => {
+    db.all(
+      `SELECT category, accomplished, target, rating FROM ipcr_records 
+       WHERE user_id = ? AND academic_year = ? AND semester = ?`,
+      [userId, academicYear, semester],
+      (err, r) => resolve(r || [])
+    );
+  });
+
+  const ipcrData = {};
+  rows.forEach(row => {
+    const key = Object.keys(categoryMap).find(k => categoryMap[k] === row.category);
+    if (key) {
+      ipcrData[key] = {
+        rating: row.rating,
+        accomplished: row.accomplished,
+        target: row.target
+      };
+    }
+  });
+
+  const overallRating = calculateOverallRating(ipcrData);
+
+  await new Promise((resolve) => {
+    db.run(
+      `INSERT INTO ipcr_summaries (user_id, academic_year, semester, overall_rating, last_updated)
+       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(user_id, academic_year, semester) DO UPDATE SET
+         overall_rating = excluded.overall_rating,
+         last_updated = excluded.last_updated`,
+      [userId, academicYear, semester, overallRating],
+      () => resolve()
+    );
+  });
+
+  return overallRating;
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // SEMESTER CONFIG ROUTES
 // ──────────────────────────────────────────────────────────────────────────────
@@ -323,15 +367,18 @@ app.get("/api/ipcr/:userId", async (req, res) => {
       }
     });
 
-    // 5. Final Aggregation (Strict All-Category Inclusion)
-    let totalCategoryRatings = 0;
-    masterKeys.forEach(key => {
-      totalCategoryRatings += ipcrData[key].rating;
+    // 5. Final Aggregation (Using Source of Truth)
+    const storedRatingRow = await new Promise((resolve) => {
+      db.get(
+        `SELECT overall_rating FROM ipcr_summaries WHERE user_id = ? AND academic_year = ? AND semester = ?`,
+        [userId, academicYear, semester],
+        (err, row) => resolve(row)
+      );
     });
 
-    const overallRating = masterKeys.length > 0 
-      ? Number((totalCategoryRatings / masterKeys.length).toFixed(2)) 
-      : 1.0;
+    const overallRating = storedRatingRow 
+      ? Number(storedRatingRow.overall_rating.toFixed(2))
+      : calculateOverallRating(ipcrData);
 
     res.json({
       ratings: ipcrData,
@@ -477,6 +524,12 @@ app.post("/api/accomplishments/manual", upload.single("file"), async (req, res) 
           const category = "Training/Seminar/Conference Certificate";
           await syncAccomplishedCount(userId, category, academicYear, semester);
         }
+
+        if (accomplishment_category === 'Accomplishment Report Support') {
+          await syncAccomplishedCount(userId, "Accomplishment Report (Support)", academicYear, semester);
+        }
+
+        await syncOverallRating(userId, academicYear, semester);
 
         // --- 🟢 AUTOMATED EXTENSION DISTRIBUTION ENGINE 🟢 ---
         if (accomplishment_category === 'List of Extension') {
@@ -817,11 +870,11 @@ app.post("/api/documents/upload", upload.array("files"), async (req, res) => {
 
         // Update IPCR record using source of truth to avoid race conditions
         const newAccomplished = await syncAccomplishedCount(userId, dbCategory, academicYear, semester);
+        await syncOverallRating(userId, academicYear, semester);
 
         // Store folder link
         if (driveResult && driveResult.categoryFolderLinks) {
-          const catKey = dbCategory.replace(/\s+/g, '').toLowerCase();
-          const folderLink = driveResult.categoryFolderLinks[catKey] || null;
+          const folderLink = driveResult.categoryFolderLinks[dbCategory] || null;
           if (folderLink) {
             await new Promise((resolve) => {
               db.run(
@@ -1035,16 +1088,19 @@ app.get("/api/admin/ipcr", async (req, res) => {
     const query = `
       SELECT
         u.id, u.name, u.department, u.email,
-        COUNT(DISTINCT d.id) as document_count
+        COUNT(DISTINCT d.id) as document_count,
+        s.overall_rating
       FROM users u
       LEFT JOIN documents d
         ON u.id = d.user_id AND d.academic_year = ? AND d.semester = ?
+      LEFT JOIN ipcr_summaries s
+        ON u.id = s.user_id AND s.academic_year = ? AND s.semester = ?
       WHERE u.role = 'professor'
       GROUP BY u.id
     `;
 
     const usersRows = await new Promise((resolve, reject) => {
-      db.all(query, [academicYear, semester], (err, rows) => {
+      db.all(query, [academicYear, semester, academicYear, semester], (err, rows) => {
         if (err) reject(err);
         else resolve(rows);
       });
@@ -1103,7 +1159,10 @@ app.get("/api/admin/ipcr", async (req, res) => {
       });
       Object.entries(byCategory).forEach(([key, row]) => {
         const target = ipcrData[key].target > 0 ? ipcrData[key].target : 5;
-        const rating = autoRate(row.accomplished, target);
+        const rating = (row.rating != null && row.rating > 0) 
+          ? Number(row.rating) 
+          : autoRate(row.accomplished, target);
+          
         ipcrData[key] = {
           target,
           accomplished: row.accomplished,
@@ -1131,12 +1190,9 @@ app.get("/api/admin/ipcr", async (req, res) => {
         }
       });
 
-      // Compute Overall Rating for the Admin Summary (Using Group-Weighted IPCR Method)
-      const overallRating = calculateOverallRating(ipcrData);
-
       return {
         ...user,
-        overall_rating: overallRating,
+        overallRating: user.overall_rating || "1.00",
         ipcrData
       };
     }));
@@ -1189,11 +1245,9 @@ app.get("/api/admin/faculty/:userId", async (req, res) => {
       );
     });
 
-    // Map DB category names to keys
-    const categoryKeyMap = { Syllabus: 'syllabus', 'Course Guide': 'courseGuide', SLM: 'slm', 'Grading Sheet': 'gradingSheet', TOS: 'tos', attendanceSheet: 'attendanceSheet', classRecord: 'classRecord', evaluationOfTeachingEffectiveness: 'evaluationOfTeachingEffectiveness', classroomObservation: 'classroomObservation', testQuestions: 'testQuestions', answerKeys: 'answerKeys', facultyAndStudentsSeekAdvices: 'facultyAndStudentsSeekAdvices', accomplishmentReport: 'accomplishmentReport', randdProposal: 'randdProposal', researchImplemented: 'researchImplemented', researchPresented: 'researchPresented', researchPublished: 'researchPublished', intellectualPropertyRights: 'intellectualPropertyRights', researchUtilizedDeveloped: 'researchUtilizedDeveloped', numberOfCitations: 'numberOfCitations', extentionProposal: 'extentionProposal', personsTrained: 'personsTrained', personServiceRating: 'personServiceRating', personGivenTraining: 'personGivenTraining', technicalAdvice: 'technicalAdvice', attendanceFlagCeremony: 'attendanceFlagCeremony', attendanceFlagLowering: 'attendanceFlagLowering', attendanceHealthAndWellnessProgram: 'attendanceHealthAndWellnessProgram', attendanceSchoolCelebrations: 'attendanceSchoolCelebrations', trainingSeminarConferenceCertificate: 'trainingSeminarConferenceCertificate', atttendanceFacultyMeeting: 'atttendanceFacultyMeeting', attendanceISOAndRelatedActivities: 'attendanceISOAndRelatedActivities', attendaceSpiritualActivities: 'attendaceSpiritualActivities' };
     const folderLinks = {};
     folderLinkRows.forEach(row => {
-      const key = categoryKeyMap[row.category];
+      const key = Object.keys(categoryMap).find(k => categoryMap[k] === row.category);
       if (key) folderLinks[key] = row.folder_link;
     });
 
@@ -1212,41 +1266,7 @@ app.get("/api/admin/faculty/:userId", async (req, res) => {
 
     res.json({
       profile,
-      folderLinks: {
-        syllabus: folderLinks.syllabus || null,
-        courseGuide: folderLinks.courseGuide || null,
-        slm: folderLinks.slm || null,
-        gradingSheet: folderLinks.gradingSheet || null,
-        tos: folderLinks.tos || null,
-        attendanceSheet: folderLinks.attendanceSheet || null,
-        classRecord: folderLinks.classRecord || null,
-        evaluationOfTeachingEffectiveness: folderLinks.evaluationOfTeachingEffectiveness || null,
-        classroomObservation: folderLinks.classroomObservation || null,
-        testQuestions: folderLinks.testQuestions || null,
-        answerKeys: folderLinks.answerKeys || null,
-        facultyAndStudentsSeekAdvices: folderLinks.facultyAndStudentsSeekAdvices || null,
-        accomplishmentReport: folderLinks.accomplishmentReport || null,
-        randdProposal: folderLinks.randdProposal || null,
-        researchImplemented: folderLinks.researchImplemented || null,
-        researchPresented: folderLinks.researchPresented || null,
-        researchPublished: folderLinks.researchPublished || null,
-        intellectualPropertyRights: folderLinks.intellectualPropertyRights || null,
-        researchUtilizedDeveloped: folderLinks.researchUtilizedDeveloped || null,
-        numberOfCitations: folderLinks.numberOfCitations || null,
-        extentionProposal: folderLinks.extentionProposal || null,
-        personsTrained: folderLinks.personsTrained || null,
-        personServiceRating: folderLinks.personServiceRating || null,
-        personGivenTraining: folderLinks.personGivenTraining || null,
-        technicalAdvice: folderLinks.technicalAdvice || null,
-        attendanceFlagCeremony: folderLinks.attendanceFlagCeremony || null,
-        attendanceFlagLowering: folderLinks.attendanceFlagLowering || null,
-        attendanceHealthAndWellnessProgram: folderLinks.attendanceHealthAndWellnessProgram || null,
-        attendanceSchoolCelebrations: folderLinks.attendanceSchoolCelebrations || null,
-        trainingSeminarConferenceCertificate: folderLinks.trainingSeminarConferenceCertificate || null,
-        atttendanceFacultyMeeting: folderLinks.atttendanceFacultyMeeting || null,
-        attendanceISOAndRelatedActivities: folderLinks.attendanceISOAndRelatedActivities || null,
-        attendaceSpiritualActivities: folderLinks.attendaceSpiritualActivities || null,
-      },
+      folderLinks,
       documents,
     });
   } catch (error) {
