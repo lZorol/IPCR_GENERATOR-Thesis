@@ -968,6 +968,7 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
 
               {/* Manual Input for IPCR "if set to Auto-Detect, or manually assigned to your chosen category"*/}
 
+              {/*
               <div className="mt-6 max-w-xs mx-auto">
                 <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Categorization Mode</label>
                 <select
@@ -985,6 +986,7 @@ const UploadPage = ({ user, uploadedFiles, isUploading, uploadProgress, processe
                   </optgroup>
                 </select>
               </div>
+              */}
 
               <div className="mt-8">
                 <label className="inline-block relative">
